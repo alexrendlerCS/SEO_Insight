@@ -145,30 +145,79 @@ def display_metrics(df: pd.DataFrame):
     """Display key performance metrics and data table."""
     st.header("Keyword Performance Metrics")
     
-    # Calculate metrics
-    total_keywords = len(df)
-    total_impressions = df['impressions'].sum()
-    total_clicks = df['clicks'].sum()
-    avg_ctr = (total_clicks / total_impressions * 100) if total_impressions > 0 else 0
+    # Define required metrics and their fallback values
+    metrics = {
+        'impressions': {'fallback': 0, 'label': 'Total Impressions', 'format': '{:,.0f}'},
+        'clicks': {'fallback': 0, 'label': 'Total Clicks', 'format': '{:,.0f}'},
+        'CTR': {'fallback': 0.0, 'label': 'Average CTR', 'format': '{:.2f}%'},
+        'cost': {'fallback': 0.0, 'label': 'Total Cost', 'format': '${:.2f}'},
+        'avg_position': {'fallback': 0.0, 'label': 'Average Position', 'format': '{:.1f}'},
+        'search_volume': {'fallback': 0, 'label': 'Total Search Volume', 'format': '{:,.0f}'},
+        'avg_monthly_searches': {'fallback': 0, 'label': 'Total Monthly Searches', 'format': '{:,.0f}'},
+        'competition_index': {'fallback': 0.0, 'label': 'Average Competition', 'format': '{:.2f}'}
+    }
+    
+    # Calculate metrics with safe fallbacks
+    calculated_metrics = {}
+    for metric, config in metrics.items():
+        if metric in df.columns:
+            if metric in ['CTR', 'avg_position', 'competition_index']:
+                calculated_metrics[metric] = df[metric].mean()
+            else:
+                calculated_metrics[metric] = df[metric].sum()
+        else:
+            st.warning(f"⚠️ {config['label']} data is not available for this dataset.")
+            calculated_metrics[metric] = config['fallback']
     
     # Display metrics in columns
     col1, col2, col3, col4 = st.columns(4)
-    with col1:
-        st.metric("Total Keywords", total_keywords)
-    with col2:
-        st.metric("Total Impressions", f"{total_impressions:,.0f}")
-    with col3:
-        st.metric("Total Clicks", f"{total_clicks:,.0f}")
-    with col4:
-        st.metric("Average CTR", f"{avg_ctr:.2f}%")
     
-    # Display data table
+    # Display total keywords (always available)
+    with col1:
+        st.metric("Total Keywords", len(df))
+    
+    # Display other metrics if available
+    metric_index = 1
+    for metric, config in metrics.items():
+        if metric in df.columns:
+            with [col2, col3, col4][metric_index % 3]:
+                st.metric(
+                    config['label'],
+                    config['format'].format(calculated_metrics[metric])
+                )
+            metric_index += 1
+    
+    # Display data table with safe formatting
+    st.subheader("Data Preview")
+    
+    # Define column configurations with safe formatting
+    column_config = {}
+    for metric, config in metrics.items():
+        if metric in df.columns:
+            if 'format' in config:
+                column_config[metric] = st.column_config.NumberColumn(
+                    config['label'],
+                    format=config['format']
+                )
+    
+    # Add keyword column if present
+    if 'keyword' in df.columns:
+        column_config['keyword'] = st.column_config.TextColumn(
+            'Keyword',
+            help='The search term or keyword'
+        )
+    
+    # Add competition column if present
+    if 'competition' in df.columns:
+        column_config['competition'] = st.column_config.TextColumn(
+            'Competition Level',
+            help='Keyword competition level (LOW, MEDIUM, HIGH)'
+        )
+    
+    # Display the dataframe with configured columns
     st.dataframe(
-        df.style.format({
-            'CTR': '{:.2f}%',
-            'cost': '${:.2f}',
-            'avg_position': '{:.1f}'
-        }),
+        df,
+        column_config=column_config,
         use_container_width=True
     )
 

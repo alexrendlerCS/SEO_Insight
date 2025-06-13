@@ -42,7 +42,8 @@ class GoogleAdsService:
         keywords: List[str],
         language_id: str = LANGUAGE_EN_US,
         location_ids: List[str] = [LOCATION_US],
-        customer_id: Optional[str] = None
+        customer_id: Optional[str] = None,
+        export_path: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get keyword ideas and metrics from Google Ads API.
@@ -52,6 +53,7 @@ class GoogleAdsService:
             language_id: Language resource name (default: English US)
             location_ids: List of location resource names (default: United States)
             customer_id: Google Ads customer ID (optional)
+            export_path: Optional path to export results as CSV
             
         Returns:
             DataFrame containing keyword ideas and metrics
@@ -134,8 +136,20 @@ class GoogleAdsService:
                     'competition_index': idea.keyword_idea_metrics.competition_index
                 })
 
+            # Create DataFrame
+            df = pd.DataFrame(results)
+            
+            # Export to CSV if path provided
+            if export_path:
+                try:
+                    df.to_csv(export_path, index=False)
+                    logger.info(f"✅ Exported results to {export_path}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to export results to {export_path}: {str(e)}")
+                    raise
+
             logger.info(f"✅ Successfully retrieved {len(results)} keyword ideas")
-            return pd.DataFrame(results)
+            return df
 
         except ValueError as ve:
             logger.error(f"❌ Validation error: {str(ve)}")
@@ -155,7 +169,8 @@ class GoogleAdsService:
     def get_keyword_metrics(
         self,
         keywords: List[str],
-        customer_id: Optional[str] = None
+        customer_id: Optional[str] = None,
+        export_path: Optional[str] = None
     ) -> pd.DataFrame:
         """
         Get historical metrics for specific keywords.
@@ -163,6 +178,7 @@ class GoogleAdsService:
         Args:
             keywords: List of keywords to get metrics for
             customer_id: Google Ads customer ID (optional)
+            export_path: Optional path to export results as CSV
             
         Returns:
             DataFrame containing keyword metrics
@@ -254,8 +270,20 @@ class GoogleAdsService:
                     'high_top_of_page_bid': high_bid
                 })
 
+            # Create DataFrame
+            df = pd.DataFrame(results)
+            
+            # Export to CSV if path provided
+            if export_path:
+                try:
+                    df.to_csv(export_path, index=False)
+                    logger.info(f"✅ Exported results to {export_path}")
+                except Exception as e:
+                    logger.error(f"❌ Failed to export results to {export_path}: {str(e)}")
+                    raise
+
             logger.info(f"✅ Successfully retrieved metrics for {len(results)} keywords")
-            return pd.DataFrame(results)
+            return df
 
         except ValueError as ve:
             logger.error(f"❌ Validation error: {str(ve)}")
