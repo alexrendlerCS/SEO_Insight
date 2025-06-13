@@ -254,17 +254,114 @@ def prepare_case_study_data(
         logger.error(f"Error preparing case study data: {str(e)}")
         raise
 
-def export_case_study_report(df: pd.DataFrame, output_path: str = 'case_study_results.csv') -> None:
+def export_case_study_report(case_study_df: pd.DataFrame, suggestions: Dict = None) -> str:
     """
-    Export case study results to CSV.
+    Generate a comprehensive case study report in HTML format.
     
     Args:
-        df (pd.DataFrame): Case study data
-        output_path (str): Path to save the CSV file
+        case_study_df: DataFrame containing the case study data
+        suggestions: Dictionary containing keyword suggestions and meta descriptions
+    
+    Returns:
+        str: HTML content of the report
     """
-    try:
-        df.to_csv(output_path, index=False)
-        logger.info(f"Case study results exported to {output_path}")
-    except Exception as e:
-        logger.error(f"Error exporting case study report: {str(e)}")
-        raise 
+    # Calculate summary metrics
+    total_keywords = len(case_study_df)
+    avg_ctr_uplift = case_study_df['ctr_uplift'].mean()
+    max_uplift = case_study_df['ctr_uplift'].max()
+    min_uplift = case_study_df['ctr_uplift'].min()
+    
+    # Generate HTML report
+    html_content = f"""
+    <html>
+    <head>
+        <style>
+            body {{ font-family: Arial, sans-serif; margin: 40px; }}
+            h1 {{ color: #2c3e50; }}
+            h2 {{ color: #34495e; margin-top: 30px; }}
+            .summary {{ background-color: #f8f9fa; padding: 20px; border-radius: 5px; }}
+            .metric {{ margin: 10px 0; }}
+            .keyword-section {{ margin: 20px 0; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; }}
+            .suggestion {{ color: #28a745; }}
+            .meta-desc {{ color: #6c757d; font-style: italic; }}
+            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
+            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }}
+            th {{ background-color: #f8f9fa; }}
+            .highlight {{ background-color: #e8f4f8; }}
+        </style>
+    </head>
+    <body>
+        <h1>SEO Optimization Case Study Report</h1>
+        <div class="summary">
+            <h2>Executive Summary</h2>
+            <div class="metric">Total Keywords Analyzed: {total_keywords}</div>
+            <div class="metric">Average CTR Uplift: {avg_ctr_uplift:.2f}%</div>
+            <div class="metric">Maximum CTR Uplift: {max_uplift:.2f}%</div>
+            <div class="metric">Minimum CTR Uplift: {min_uplift:.2f}%</div>
+        </div>
+        
+        <h2>Detailed Analysis</h2>
+        <table>
+            <tr>
+                <th>Keyword</th>
+                <th>Original CTR</th>
+                <th>Estimated CTR</th>
+                <th>CTR Uplift</th>
+            </tr>
+    """
+    
+    # Add keyword rows
+    for _, row in case_study_df.iterrows():
+        html_content += f"""
+            <tr>
+                <td>{row['keyword']}</td>
+                <td>{row['original_ctr']:.2f}%</td>
+                <td>{row['estimated_ctr']:.2f}%</td>
+                <td class="highlight">{row['ctr_uplift']:.2f}%</td>
+            </tr>
+        """
+    
+    html_content += """
+        </table>
+        
+        <h2>Keyword Recommendations</h2>
+    """
+    
+    # Add detailed recommendations if suggestions are provided
+    if suggestions:
+        for keyword, alts in suggestions['keywords'].items():
+            html_content += f"""
+            <div class="keyword-section">
+                <h3>{keyword}</h3>
+                <div class="suggestion">
+                    <strong>Suggested Alternatives:</strong><br>
+                    {', '.join(alts)}
+                </div>
+                <div class="meta-desc">
+                    <strong>Meta Description:</strong><br>
+                    {suggestions['descriptions'][keyword]}
+                </div>
+            </div>
+            """
+    
+    html_content += """
+        <h2>Implementation Recommendations</h2>
+        <ol>
+            <li>Prioritize keywords with the highest CTR uplift potential</li>
+            <li>Implement suggested meta descriptions for improved click-through rates</li>
+            <li>Monitor performance after implementing changes</li>
+            <li>Regularly review and update keyword strategy based on results</li>
+        </ol>
+        
+        <h2>Next Steps</h2>
+        <ul>
+            <li>Review and approve suggested keyword changes</li>
+            <li>Update meta descriptions for selected keywords</li>
+            <li>Set up tracking for new keyword performance</li>
+            <li>Schedule follow-up analysis in 30 days</li>
+        </ul>
+    </body>
+    </html>
+    """
+    
+    return html_content 

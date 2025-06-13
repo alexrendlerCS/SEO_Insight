@@ -44,12 +44,68 @@ if 'estimated_ctrs' not in st.session_state:
 if 'case_study_data' not in st.session_state:
     st.session_state.case_study_data = None
 
+def show_progress_tracker():
+    """Display progress tracker in the sidebar."""
+    st.sidebar.markdown("### 🧭 Progress Tracker")
+    
+    # Define steps and their completion conditions
+    steps = [
+        {
+            "name": "Data Loaded",
+            "condition": st.session_state.data is not None,
+            "description": "Upload or load keyword performance data"
+        },
+        {
+            "name": "Clustering Completed",
+            "condition": st.session_state.clustered_data is not None,
+            "description": "Run keyword clustering analysis"
+        },
+        {
+            "name": "Suggestions Generated",
+            "condition": (
+                'suggestions' in st.session_state 
+                and st.session_state.suggestions is not None
+            ),
+            "description": "Generate AI keyword suggestions"
+        },
+        {
+            "name": "Estimated CTRs Entered",
+            "condition": (
+                'estimated_ctrs' in st.session_state 
+                and st.session_state.estimated_ctrs is not None
+            ),
+            "description": "Enter estimated CTRs for suggestions"
+        },
+        {
+            "name": "Case Study Created",
+            "condition": st.session_state.case_study_data is not None,
+            "description": "Generate case study report"
+        }
+    ]
+    
+    # Display steps with status indicators
+    for step in steps:
+        status = "✅" if step["condition"] else "⏳"
+        st.sidebar.markdown(
+            f"{status} **{step['name']}**  \n"
+            f"<span style='color: gray; font-size: 0.8em;'>{step['description']}</span>",
+            unsafe_allow_html=True
+        )
+
 def load_data():
     """Load and process keyword data from file or mock data."""
-    st.sidebar.header("Data Source")
+    st.markdown("### 📂 Upload Data")
+    st.markdown("""
+    Start by either uploading your own keyword performance data or using our sample data to explore the tool.
+    The data should be in CSV format with columns for keyword, CTR, and other performance metrics.
+    """)
     
     # Option to use mock data
-    use_mock = st.sidebar.checkbox("Use Mock Data", value=True)
+    use_mock = st.checkbox(
+        "Use Sample Data",
+        value=False,
+        help="Use our sample dataset to explore the tool's features"
+    )
     
     if use_mock:
         try:
@@ -57,23 +113,30 @@ def load_data():
             if not os.path.exists(mock_data_path):
                 mock_data_path = 'mock_keyword_data.csv'
             df = pd.read_csv(mock_data_path)
-            st.sidebar.success("✅ Loaded mock data successfully!")
+            st.success("✅ Sample data loaded successfully!")
+            st.session_state.data = df
             return df
         except Exception as e:
             logger.error(f"Error loading mock data: {str(e)}")
-            st.sidebar.error("❌ Error loading mock data. Please check the file exists.")
+            st.error("❌ Error loading sample data. Please check the file exists.")
             return None
     
     # File upload option
-    uploaded_file = st.sidebar.file_uploader("Upload Keyword Data (CSV)", type=['csv'])
+    uploaded_file = st.file_uploader(
+        "Upload your keyword performance data (CSV)",
+        type=['csv'],
+        help="Upload a CSV file with columns: keyword, CTR, and other metrics"
+    )
+    
     if uploaded_file is not None:
         try:
             df = pd.read_csv(uploaded_file)
-            st.sidebar.success("✅ File uploaded successfully!")
+            st.success("✅ File uploaded successfully!")
+            st.session_state.data = df
             return df
         except Exception as e:
             logger.error(f"Error reading file: {str(e)}")
-            st.sidebar.error("❌ Error reading file. Please check the format.")
+            st.error("❌ Error reading file. Please check the format.")
             return None
     
     return None
@@ -112,39 +175,76 @@ def display_metrics(df: pd.DataFrame):
 def perform_clustering(df: pd.DataFrame):
     """Perform keyword clustering with adjustable parameters."""
     st.header("Keyword Clustering")
+    st.markdown("""
+    ### Understanding Keyword Clustering
     
-    # Clustering section
-    if st.session_state.data is not None:
-        st.markdown("### 🔄 Keyword Clustering")
-        st.markdown("""
-        🎯 *Adjust the CTR threshold to identify low-performing keywords, then group them into clusters 
-        based on similarity to discover common themes and improvement opportunities.*
-        """)
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            ctr_threshold = st.slider(
-                "CTR Threshold (%)",
-                min_value=0.0,
-                max_value=10.0,
-                value=1.0,
-                step=0.1,
-                help="Keywords with CTR below this threshold will be considered low-performing"
-            )
-        
-        with col2:
-            n_clusters = st.slider(
-                "Number of Clusters",
-                min_value=2,
-                max_value=10,
-                value=5,
-                help="Number of clusters to group similar keywords"
-            )
+    This section helps you identify and group similar keywords that aren't performing well. Here's what each setting does:
+    
+    - **CTR Threshold**: This is the minimum Click-Through Rate (CTR) you expect from your keywords. 
+      - Setting it lower (e.g., 0.5%) will identify more keywords as underperforming
+      - Setting it higher (e.g., 2%) will be more selective, focusing only on the worst performers
+    
+    - **Number of Clusters**: This determines how many groups your keywords will be divided into.
+      - Fewer clusters (2-3): Broader groups, good for identifying major themes
+      - More clusters (6-10): More specific groups, better for detailed analysis
+    
+    - **Advanced Embeddings**: This option uses more sophisticated text analysis.
+      - Off: Faster processing, good for basic keyword similarity
+      - On: More accurate grouping, better for complex keyword relationships
+    """)
+    
+    # Clustering parameters
+    col1, col2 = st.columns(2)
+    with col1:
+        ctr_threshold = st.slider(
+            "CTR Threshold (%)",
+            min_value=0.0,
+            max_value=5.0,
+            value=1.0,
+            step=0.1,
+            help="Keywords with CTR below this threshold will be considered low-performing. Lower values will identify more keywords as underperforming."
+        )
+    with col2:
+        n_clusters = st.slider(
+            "Number of Clusters",
+            min_value=2,
+            max_value=10,
+            value=5,
+            help="Number of groups to divide keywords into. More clusters = more specific groupings."
+        )
     
     # Option to use transformer
-    use_transformer = st.checkbox("Use Advanced Embeddings (SentenceTransformer)", value=False)
+    use_transformer = st.checkbox(
+        "Use Advanced Embeddings",
+        help="Enable more sophisticated text analysis for better keyword grouping (takes longer to process)"
+    )
     
-    if st.button("Run Clustering"):
+    # Style the Run Clustering button
+    st.markdown(
+        """
+        <style>
+        div.stButton > button:first-child {
+            background-color: #28a745;
+            color: white;
+            font-weight: bold;
+            font-size: 1.1em;
+            border: none;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            transition: all 0.3s ease;
+        }
+        div.stButton > button:first-child:hover {
+            background-color: #218838;
+            border: none;
+            transform: translateY(-1px);
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        </style>
+        """,
+        unsafe_allow_html=True
+    )
+    
+    if st.button("🚀 Run Clustering"):
         with st.spinner("🔄 Clustering keywords..."):
             try:
                 clustered_df = cluster_low_performance_keywords(
@@ -156,49 +256,57 @@ def perform_clustering(df: pd.DataFrame):
                 st.session_state.clustered_data = clustered_df
                 st.success("✅ Clustering completed successfully!")
                 
-                # Display low-performing keywords
-                low_perf_df = clustered_df[clustered_df['cluster_label'] != -1]
-                if not low_perf_df.empty:
-                    st.subheader("Low-Performing Keywords")
-                    st.dataframe(
-                        low_perf_df.style.format({
-                            'CTR': '{:.2f}%',
-                            'cost': '${:.2f}',
-                            'avg_position': '{:.1f}'
-                        }),
-                        use_container_width=True
-                    )
+                # Display cluster visualization
+                try:
+                    clusterer = KeywordClusterer(n_clusters=n_clusters, use_transformer=use_transformer)
+                    keywords = clustered_df['keyword'].tolist()
+                    embeddings, labels = clusterer.cluster_keywords(keywords)
+                    
+                    fig = clusterer.visualize_clusters(embeddings, labels, keywords)
+                    st.plotly_chart(fig, use_container_width=True)
+                    
+                    # Add descriptive section
+                    st.subheader("🔍 Understanding Your Clusters")
+                    st.markdown("""
+                    Each cluster represents a group of similar keywords. The visualization above shows how your keywords are related:
+                    
+                    - **Points**: Each point represents a keyword
+                    - **Colors**: Different colors indicate different clusters
+                    - **Distance**: Keywords closer together are more similar
+                    
+                    Use this visualization to:
+                    1. Identify common themes in underperforming keywords
+                    2. Find opportunities to consolidate similar keywords
+                    3. Discover patterns in your keyword strategy
+                    """)
+                    
+                    # Show low-performing keywords
+                    show_low_performing_keywords()
+                except Exception as e:
+                    logger.error(f"Error visualizing clusters: {str(e)}")
+                    st.error("❌ Error visualizing clusters. Please try again.")
             except Exception as e:
                 logger.error(f"Error during clustering: {str(e)}")
                 st.error("❌ Error during clustering. Please try again.")
                 return
-    
-    if st.session_state.clustered_data is not None:
-        # Display cluster visualization
-        try:
-            clusterer = KeywordClusterer(n_clusters=n_clusters, use_transformer=use_transformer)
-            keywords = st.session_state.clustered_data['keyword'].tolist()
-            embeddings, labels = clusterer.cluster_keywords(keywords)
-            
-            fig = clusterer.visualize_clusters(embeddings, labels, keywords)
-            st.plotly_chart(fig, use_container_width=True)
-            
-            # Add descriptive section
-            st.subheader("🔍 Clusters")
-            st.markdown("""
-            Each cluster groups similar keywords based on their meaning. 
-            Use clusters to identify keyword themes and replace underperformers more effectively.
-            """)
-            
-            # Show low-performing keywords
-            show_low_performing_keywords()
-        except Exception as e:
-            logger.error(f"Error visualizing clusters: {str(e)}")
-            st.error("❌ Error visualizing clusters. Please try again.")
 
 def generate_suggestions():
     """Generate and display LLM suggestions for low-performing keywords."""
     st.header("AI-Generated Suggestions")
+    st.markdown("""
+    ### Understanding AI Suggestions
+    
+    This section uses artificial intelligence to analyze your underperforming keywords and suggest improvements:
+    
+    1. **Alternative Keywords**: The AI suggests similar keywords that might perform better
+    2. **Meta Descriptions**: AI-generated descriptions optimized for search engines
+    3. **CTR Estimates**: You can adjust these to simulate potential improvements
+    
+    The suggestions are based on:
+    - Similarity to your existing keywords
+    - Common search patterns
+    - Current performance trends
+    """)
     
     if st.session_state.clustered_data is None:
         st.warning("⚠️ Please run clustering first to identify low-performing keywords.")
@@ -228,6 +336,9 @@ def generate_suggestions():
                     'descriptions': meta_descriptions
                 }
                 
+                # Initialize estimated_ctrs dictionary
+                st.session_state.estimated_ctrs = {}
+                
                 st.success("✅ Suggestions generated successfully!")
             except Exception as e:
                 logger.error(f"Error generating suggestions: {str(e)}")
@@ -236,7 +347,17 @@ def generate_suggestions():
     
     if st.session_state.suggestions:
         # Display suggestions and collect estimated CTRs
-        st.subheader("Keyword Suggestions and CTR Estimates")
+        st.subheader("Review and Adjust Suggestions")
+        st.markdown("""
+        For each keyword, you can:
+        - Review alternative keyword suggestions
+        - Read the AI-generated meta description
+        - Adjust the estimated CTR to see potential improvements
+        """)
+        
+        # Initialize estimated_ctrs if not already done
+        if 'estimated_ctrs' not in st.session_state:
+            st.session_state.estimated_ctrs = {}
         
         for keyword, alternatives in st.session_state.suggestions['keywords'].items():
             with st.expander(f"Suggestions for: {keyword}"):
@@ -249,14 +370,21 @@ def generate_suggestions():
                     st.write("Meta Description:")
                     st.write(st.session_state.suggestions['descriptions'][keyword])
                 
+                # Get current CTR from clustered data
+                current_ctr = float(st.session_state.clustered_data[
+                    st.session_state.clustered_data['keyword'] == keyword
+                ]['CTR'].iloc[0])
+                
+                # Initialize estimated CTR with current CTR if not set
+                if keyword not in st.session_state.estimated_ctrs:
+                    st.session_state.estimated_ctrs[keyword] = current_ctr
+                
                 # Add CTR estimate input
                 estimated_ctr = st.number_input(
                     f"Estimated New CTR for {keyword} (%)",
                     min_value=0.0,
                     max_value=100.0,
-                    value=float(st.session_state.clustered_data[
-                        st.session_state.clustered_data['keyword'] == keyword
-                    ]['CTR'].iloc[0]),
+                    value=st.session_state.estimated_ctrs[keyword],
                     step=0.1,
                     key=f"ctr_{keyword}"
                 )
@@ -265,6 +393,20 @@ def generate_suggestions():
 def prepare_case_study():
     """Prepare and display case study data."""
     st.header("Case Study Analysis")
+    st.markdown("""
+    ### Understanding the Case Study
+    
+    This section helps you quantify the potential impact of implementing the suggested changes:
+    
+    1. **Original vs Estimated CTR**: Compare current performance with projected improvements
+    2. **CTR Uplift**: See the percentage improvement for each keyword
+    3. **Visual Comparison**: Bar chart showing before and after scenarios
+    
+    Use this analysis to:
+    - Prioritize which keywords to update first
+    - Estimate the overall impact on your campaign
+    - Make data-driven decisions about keyword changes
+    """)
     
     if not st.session_state.suggestions or not st.session_state.estimated_ctrs:
         st.warning("⚠️ Please generate suggestions and provide CTR estimates first.")
@@ -328,61 +470,39 @@ def prepare_case_study():
                 # Display chart
                 st.plotly_chart(fig, use_container_width=True)
                 
-                # Export button
-                if st.button("Export Case Study Report"):
-                    export_case_study_report(case_study_df)
-                    st.success("✅ Case study report exported successfully!")
+                # Export options
+                st.subheader("Export Options")
+                col1, col2 = st.columns(2)
+                
+                with col1:
+                    # Export CSV
+                    csv = case_study_df.to_csv(index=False)
+                    st.download_button(
+                        label="📥 Download CSV Report",
+                        data=csv,
+                        file_name="seo_case_study.csv",
+                        mime="text/csv",
+                        help="Download the case study data in CSV format"
+                    )
+                
+                with col2:
+                    # Export HTML Report
+                    html_report = export_case_study_report(
+                        case_study_df,
+                        st.session_state.suggestions
+                    )
+                    st.download_button(
+                        label="📥 Download HTML Report",
+                        data=html_report,
+                        file_name="seo_case_study_report.html",
+                        mime="text/html",
+                        help="Download a comprehensive HTML report with analysis and recommendations"
+                    )
+                
+                st.success("✅ Case study report generated successfully!")
             except Exception as e:
                 logger.error(f"Error preparing case study: {str(e)}")
                 st.error("❌ Error preparing case study. Please try again.")
-
-def show_progress_tracker():
-    """Display progress tracker in the sidebar."""
-    st.sidebar.markdown("### 🧭 Progress Tracker")
-    
-    # Define steps and their completion conditions
-    steps = [
-        {
-            "name": "Data Loaded",
-            "condition": st.session_state.data is not None,
-            "description": "Upload or load keyword performance data"
-        },
-        {
-            "name": "Clustering Completed",
-            "condition": st.session_state.clustered_data is not None,
-            "description": "Run keyword clustering analysis"
-        },
-        {
-            "name": "Suggestions Generated",
-            "condition": (
-                'suggestions' in st.session_state 
-                and st.session_state.suggestions is not None
-            ),
-            "description": "Generate AI keyword suggestions"
-        },
-        {
-            "name": "Estimated CTRs Entered",
-            "condition": (
-                'estimated_ctrs' in st.session_state 
-                and st.session_state.estimated_ctrs is not None
-            ),
-            "description": "Enter estimated CTRs for suggestions"
-        },
-        {
-            "name": "Case Study Created",
-            "condition": st.session_state.case_study_data is not None,
-            "description": "Generate case study report"
-        }
-    ]
-    
-    # Display steps with status indicators
-    for step in steps:
-        status = "✅" if step["condition"] else "⏳"
-        st.sidebar.markdown(
-            f"{status} **{step['name']}**  \n"
-            f"<span style='color: gray; font-size: 0.8em;'>{step['description']}</span>",
-            unsafe_allow_html=True
-        )
 
 def show_low_performing_keywords():
     """Display low-performing keywords table with suggestions."""
@@ -434,99 +554,30 @@ def show_low_performing_keywords():
 
 def main():
     """Main dashboard function."""
-    st.title("SEO Analysis Tool")
+    st.title("SEO Analysis Dashboard")
     
-    # Show progress tracker in sidebar
+    # Show progress tracker
     show_progress_tracker()
     
-    # File upload section
-    st.markdown("### 📂 Upload Data")
-    uploaded_file = st.file_uploader(
-        "Upload your keyword performance data (CSV)",
-        type=['csv'],
-        help="Upload a CSV file with columns: keyword, CTR, and other metrics"
-    )
+    # Load data
+    df = load_data()
     
-    if uploaded_file is not None:
-        try:
-            df = pd.read_csv(uploaded_file)
-            st.session_state.data = df
-            st.success("Data loaded successfully!")
-        except Exception as e:
-            st.error(f"Error loading data: {str(e)}")
-            return
-    
-    # Clustering section
-    if st.session_state.data is not None:
-        st.markdown("### 🔄 Keyword Clustering")
-        st.markdown("""
-        🎯 *Adjust the CTR threshold to identify low-performing keywords, then group them into clusters 
-        based on similarity to discover common themes and improvement opportunities.*
-        """)
+    if df is not None:
+        # Display data preview
+        with st.expander("Data Preview"):
+            st.dataframe(df.head())
         
-        col1, col2 = st.columns(2)
-        with col1:
-            ctr_threshold = st.slider(
-                "CTR Threshold (%)",
-                min_value=0.0,
-                max_value=10.0,
-                value=1.0,
-                step=0.1,
-                help="Keywords with CTR below this threshold will be considered low-performing"
-            )
+        # Display metrics
+        display_metrics(df)
         
-        with col2:
-            n_clusters = st.slider(
-                "Number of Clusters",
-                min_value=2,
-                max_value=10,
-                value=5,
-                help="Number of clusters to group similar keywords"
-            )
+        # Perform clustering
+        perform_clustering(df)
         
-        use_transformer = st.checkbox(
-            "Use Advanced Embeddings",
-            help="Use more sophisticated text embeddings for better clustering (requires more processing time)"
-        )
+        # Generate suggestions
+        generate_suggestions()
         
-        # Style the Run Clustering button
-        st.markdown(
-            """
-            <style>
-            div.stButton > button:first-child {
-                background-color: #28a745;
-                color: white;
-                font-weight: bold;
-                font-size: 1.1em;
-                border: none;
-                padding: 0.5rem 1rem;
-                border-radius: 0.5rem;
-                transition: all 0.3s ease;
-            }
-            div.stButton > button:first-child:hover {
-                background-color: #218838;
-                border: none;
-                transform: translateY(-1px);
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            </style>
-            """,
-            unsafe_allow_html=True
-        )
-        
-        if st.button("🚀 Run Clustering"):
-            try:
-                clustered_data = cluster_low_performance_keywords(
-                    st.session_state.data,
-                    ctr_threshold=ctr_threshold,
-                    n_clusters=n_clusters,
-                    use_transformer=use_transformer
-                )
-                st.session_state.clustered_data = clustered_data
-                st.success("Clustering completed successfully!")
-            except Exception as e:
-                st.error(f"Error during clustering: {str(e)}")
-                return
+        # Prepare case study
+        prepare_case_study()
 
 if __name__ == "__main__":
     main() 
