@@ -17,14 +17,6 @@ from umap import UMAP
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Lazy loading for SentenceTransformer
-TRANSFORMER_AVAILABLE = False
-try:
-    from sentence_transformers import SentenceTransformer
-    TRANSFORMER_AVAILABLE = True
-except ImportError:
-    logger.warning("SentenceTransformer not available. Will use TF-IDF for embeddings.")
-
 class KeywordClusterer:
     def __init__(self, n_clusters: int = 5, use_transformer: bool = False):
         """
@@ -35,26 +27,40 @@ class KeywordClusterer:
             use_transformer (bool): Whether to use SentenceTransformer for embeddings
         """
         self.n_clusters = n_clusters
-        self.use_transformer = use_transformer and TRANSFORMER_AVAILABLE
+        self.use_transformer = use_transformer
         self.vectorizer = None
-        self.transformer = None
-        self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
-        self.umap = UMAP(n_components=2, random_state=42)
+        self.kmeans = None  # Initialize in cluster_keywords
+        self.umap = None    # Initialize in cluster_keywords
         
-        if self.use_transformer and not TRANSFORMER_AVAILABLE:
-            logger.warning("SentenceTransformer requested but not available. Falling back to TF-IDF.")
-            self.use_transformer = False
+        # Only import embedding helpers if transformer is requested
+        if self.use_transformer:
+            try:
+                from .embedding_helpers import initialize_transformer, is_transformer_available
+                if not initialize_transformer():
+                    logger.warning("SentenceTransformer not available. Falling back to TF-IDF.")
+                    self.use_transformer = False
+            except ImportError:
+                logger.warning("Embedding helpers not available. Falling back to TF-IDF.")
+                self.use_transformer = False
     
     def _get_embeddings(self, keywords: List[str]) -> np.ndarray:
         """Get embeddings for keywords using either TF-IDF or SentenceTransformer."""
         if self.use_transformer:
-            if self.transformer is None:
-                self.transformer = SentenceTransformer('all-MiniLM-L6-v2')
-            return self.transformer.encode(keywords)
-        else:
-            if self.vectorizer is None:
-                self.vectorizer = TfidfVectorizer(max_features=1000)
-            return self.vectorizer.fit_transform(keywords).toarray()
+            try:
+                from .embedding_helpers import get_transformer_embeddings
+                embeddings = get_transformer_embeddings(keywords)
+                if embeddings is not None:
+                    return embeddings
+                logger.warning("Failed to get transformer embeddings. Falling back to TF-IDF.")
+                self.use_transformer = False
+            except Exception as e:
+                logger.error(f"Error getting transformer embeddings: {str(e)}")
+                self.use_transformer = False
+        
+        # Fallback to TF-IDF
+        if self.vectorizer is None:
+            self.vectorizer = TfidfVectorizer(max_features=1000)
+        return self.vectorizer.fit_transform(keywords).toarray()
     
     def cluster_keywords(self, keywords: List[str]) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -65,8 +71,28 @@ class KeywordClusterer:
             
         Returns:
             Tuple[np.ndarray, np.ndarray]: Embeddings and cluster labels
+            
+        Raises:
+            ValueError: If there are fewer than 2 keywords to cluster
         """
+        if len(keywords) < 2:
+            raise ValueError("At least 2 keywords are required for clustering")
+        
         try:
+            # Adjust number of clusters if needed
+            n_clusters = min(self.n_clusters, len(keywords))
+            if n_clusters < self.n_clusters:
+                logger.warning(f"Reducing number of clusters from {self.n_clusters} to {n_clusters} due to dataset size")
+            
+            # Initialize models with adjusted parameters
+            self.kmeans = KMeans(n_clusters=n_clusters, random_state=42)
+            self.umap = UMAP(
+                n_components=2,
+                n_neighbors=min(15, len(keywords) - 1),
+                min_dist=0.1,
+                random_state=42
+            )
+            
             # Get embeddings
             embeddings = self._get_embeddings(keywords)
             
@@ -107,7 +133,7 @@ class KeywordClusterer:
             fig = go.Figure()
             
             # Add traces for each cluster
-            for cluster in range(self.n_clusters):
+            for cluster in range(max(labels) + 1):  # Use actual number of clusters
                 cluster_data = plot_df[plot_df['cluster'] == cluster]
                 fig.add_trace(go.Scatter(
                     x=cluster_data['x'],
@@ -156,30 +182,36 @@ def cluster_low_performance_keywords(
         # Filter low-performing keywords
         low_perf_df = df[df['CTR'] < ctr_threshold].copy()
         
-        if len(low_perf_df) == 0:
-            logger.warning(f"No keywords found below {ctr_threshold}% CTR")
+        if len(low_perf_df) < 2:
+            logger.warning(f"Not enough low-performing keywords to cluster (found {len(low_perf_df)}). Try lowering the CTR threshold.")
             df['cluster_label'] = -1
             return df
         
         # Initialize clusterer
         clusterer = KeywordClusterer(n_clusters=n_clusters, use_transformer=use_transformer)
         
-        # Get embeddings and cluster labels
-        keywords = low_perf_df['keyword'].tolist()
-        embeddings, labels = clusterer.cluster_keywords(keywords)
-        
-        # Add cluster labels to DataFrame
-        low_perf_df['cluster_label'] = labels
-        
-        # Add -1 label for high-performing keywords
-        high_perf_df = df[df['CTR'] >= ctr_threshold].copy()
-        high_perf_df['cluster_label'] = -1
-        
-        # Combine results
-        result_df = pd.concat([low_perf_df, high_perf_df])
-        
-        return result_df
-        
+        try:
+            # Get embeddings and cluster labels
+            keywords = low_perf_df['keyword'].tolist()
+            embeddings, labels = clusterer.cluster_keywords(keywords)
+            
+            # Add cluster labels to DataFrame
+            low_perf_df['cluster_label'] = labels
+            
+            # Add -1 label for high-performing keywords
+            high_perf_df = df[df['CTR'] >= ctr_threshold].copy()
+            high_perf_df['cluster_label'] = -1
+            
+            # Combine results
+            result_df = pd.concat([low_perf_df, high_perf_df])
+            
+            return result_df
+            
+        except ValueError as ve:
+            logger.warning(f"Clustering skipped: {str(ve)}")
+            df['cluster_label'] = -1
+            return df
+            
     except Exception as e:
         logger.error(f"Error clustering low-performance keywords: {str(e)}")
         raise
