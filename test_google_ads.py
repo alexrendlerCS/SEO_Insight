@@ -19,7 +19,7 @@ def test_google_ads_integration():
             "GOOGLE_CLIENT_ID",
             "GOOGLE_CLIENT_SECRET",
             "GOOGLE_REFRESH_TOKEN",
-            "GOOGLE_CUSTOMER_ID"
+            "GOOGLE_TEST_CUSTOMER_ID"
         ]
         
         missing_vars = [var for var in required_vars if not os.getenv(var)]
@@ -30,8 +30,9 @@ def test_google_ads_integration():
         logger.info("Initializing Google Ads Service...")
         ads_service = GoogleAdsService()
         
-        # Get customer ID from environment
-        customer_id = os.getenv("GOOGLE_CUSTOMER_ID")
+        # Get test customer ID from environment
+        customer_id = os.getenv("GOOGLE_TEST_CUSTOMER_ID")
+        logger.info(f"Using test customer ID: {customer_id}")
         
         # Test keyword ideas
         test_keywords = ["digital marketing", "seo services", "content marketing"]

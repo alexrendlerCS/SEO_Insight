@@ -10,6 +10,10 @@ import logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# Constants
+LANGUAGE_EN_US = "languageConstants/1000"  # English (United States)
+LOCATION_US = "geoTargetConstants/2840"    # United States
+
 class GoogleAdsService:
     def __init__(self):
         load_dotenv()
@@ -36,8 +40,8 @@ class GoogleAdsService:
     def get_keyword_ideas(
         self,
         keywords: List[str],
-        language_id: str = "1000",  # English
-        location_ids: List[str] = ["2840"],  # United States
+        language_id: str = LANGUAGE_EN_US,
+        location_ids: List[str] = [LOCATION_US],
         customer_id: Optional[str] = None
     ) -> pd.DataFrame:
         """
@@ -45,14 +49,48 @@ class GoogleAdsService:
         
         Args:
             keywords: List of seed keywords to get ideas for
-            language_id: Language ID (default: English)
-            location_ids: List of location IDs (default: United States)
+            language_id: Language resource name (default: English US)
+            location_ids: List of location resource names (default: United States)
             customer_id: Google Ads customer ID (optional)
             
         Returns:
             DataFrame containing keyword ideas and metrics
+            
+        Raises:
+            ValueError: If validation fails for resource names or keywords
+            
+        Note:
+            CPC (Cost Per Click) data is not available in the Google Ads API v20
+            GenerateKeywordIdeasRequest. Only search volume and competition metrics
+            are provided.
         """
         try:
+            # Validate keywords
+            if not keywords:
+                raise ValueError("Keywords list cannot be empty")
+            
+            # Validate resource name formats
+            def validate_resource_name(resource_name: str, resource_type: str) -> None:
+                if not resource_name.startswith(f"{resource_type}/"):
+                    raise ValueError(
+                        f"Invalid {resource_type} format. Expected '{resource_type}/{{id}}', "
+                        f"got '{resource_name}'"
+                    )
+            
+            # Validate language resource name
+            validate_resource_name(language_id, "languageConstants")
+            
+            # Validate location resource names
+            for location_id in location_ids:
+                validate_resource_name(location_id, "geoTargetConstants")
+            
+            # Log request parameters
+            logger.info("🔍 Request Parameters:")
+            logger.info(f"  Language: {language_id}")
+            logger.info(f"  Keywords: {', '.join(keywords)}")
+            logger.info(f"  Customer ID: {customer_id or 'Not provided'}")
+            logger.info(f"  Location IDs: {', '.join(location_ids)}")
+
             keyword_plan_idea_service = self._client.get_service("KeywordPlanIdeaService")
             keyword_competition_level_enum = self._client.enums.KeywordPlanCompetitionLevelEnum
 
@@ -77,18 +115,31 @@ class GoogleAdsService:
             # Process results
             results = []
             for idea in keyword_ideas:
+                # Safely extract competition level
+                try:
+                    competition = (
+                        idea.keyword_idea_metrics.competition.name 
+                        if idea.keyword_idea_metrics.competition 
+                        else "UNSPECIFIED"
+                    )
+                    logger.debug(f"Competition level for '{idea.text}': {competition}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract competition level for '{idea.text}': {str(e)}")
+                    competition = "UNSPECIFIED"
+
                 results.append({
                     'keyword': idea.text,
                     'search_volume': idea.keyword_idea_metrics.avg_monthly_searches,
-                    'competition': keyword_competition_level_enum.KeywordPlanCompetitionLevel.Name(
-                        idea.keyword_idea_metrics.competition
-                    ),
-                    'cpc': idea.keyword_idea_metrics.average_cpc.micros / 1_000_000,
+                    'competition': competition,
                     'competition_index': idea.keyword_idea_metrics.competition_index
                 })
 
+            logger.info(f"✅ Successfully retrieved {len(results)} keyword ideas")
             return pd.DataFrame(results)
 
+        except ValueError as ve:
+            logger.error(f"❌ Validation error: {str(ve)}")
+            raise
         except GoogleAdsException as ex:
             logger.error(f"❌ Google Ads API error: {ex}")
             for error in ex.failure.errors:
@@ -115,19 +166,31 @@ class GoogleAdsService:
             
         Returns:
             DataFrame containing keyword metrics
+            
+        Raises:
+            ValueError: If keywords list is empty
+            
+        Note:
+            CPC (Cost Per Click) data is not available in the Google Ads API v20
+            GenerateKeywordHistoricalMetricsRequest. Only search volume, competition,
+            and bid ranges are provided.
         """
         try:
+            # Validate keywords
+            if not keywords:
+                raise ValueError("Keywords list cannot be empty")
+            
+            # Log request parameters
+            logger.info("🔍 Request Parameters:")
+            logger.info(f"  Keywords: {', '.join(keywords)}")
+            logger.info(f"  Customer ID: {customer_id or 'Not provided'}")
+
             keyword_plan_idea_service = self._client.get_service("KeywordPlanIdeaService")
             
             # Create request
             request = self._client.get_type("GenerateKeywordHistoricalMetricsRequest")
             request.customer_id = customer_id
-            
-            # Add keywords to request
-            for keyword in keywords:
-                keyword_idea = self._client.get_type("KeywordPlanKeyword")
-                keyword_idea.text = keyword
-                request.keywords.append(keyword_idea)
+            request.keywords.extend(keywords)  # Directly extend with strings
 
             # Get metrics
             response = keyword_plan_idea_service.generate_keyword_historical_metrics(request=request)
@@ -135,19 +198,68 @@ class GoogleAdsService:
             # Process results
             results = []
             for result in response.results:
-                metrics = result.keyword_idea_metrics
+                metrics = result.keyword_metrics
+                
+                # Safely extract competition level
+                try:
+                    competition = (
+                        metrics.competition.name 
+                        if metrics.competition 
+                        else "UNSPECIFIED"
+                    )
+                    logger.debug(f"Competition level for '{result.text}': {competition}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract competition level for '{result.text}': {str(e)}")
+                    competition = "UNSPECIFIED"
+
+                # Safely extract bid ranges
+                try:
+                    low_bid = (
+                        metrics.low_top_of_page_bid_micros / 1_000_000 
+                        if metrics.low_top_of_page_bid_micros 
+                        else 0.0
+                    )
+                    high_bid = (
+                        metrics.high_top_of_page_bid_micros / 1_000_000 
+                        if metrics.high_top_of_page_bid_micros 
+                        else 0.0
+                    )
+                    logger.debug(f"Bid range for '{result.text}': ${low_bid:.2f} - ${high_bid:.2f}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract bid range for '{result.text}': {str(e)}")
+                    low_bid = high_bid = 0.0
+
+                # Safely extract search volume
+                try:
+                    search_volume = metrics.avg_monthly_searches or 0
+                    logger.debug(f"Search volume for '{result.text}': {search_volume:,}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract search volume for '{result.text}': {str(e)}")
+                    search_volume = 0
+
+                # Safely extract competition index
+                try:
+                    competition_index = metrics.competition_index or 0
+                    logger.debug(f"Competition index for '{result.text}': {competition_index}")
+                except Exception as e:
+                    logger.warning(f"Failed to extract competition index for '{result.text}': {str(e)}")
+                    competition_index = 0
+
                 results.append({
                     'keyword': result.text,
-                    'avg_monthly_searches': metrics.avg_monthly_searches,
-                    'competition': metrics.competition.name,
-                    'cpc': metrics.average_cpc.micros / 1_000_000,
-                    'competition_index': metrics.competition_index,
-                    'low_top_of_page_bid': metrics.low_top_of_page_bid.micros / 1_000_000,
-                    'high_top_of_page_bid': metrics.high_top_of_page_bid.micros / 1_000_000
+                    'avg_monthly_searches': search_volume,
+                    'competition': competition,
+                    'competition_index': competition_index,
+                    'low_top_of_page_bid': low_bid,
+                    'high_top_of_page_bid': high_bid
                 })
 
+            logger.info(f"✅ Successfully retrieved metrics for {len(results)} keywords")
             return pd.DataFrame(results)
 
+        except ValueError as ve:
+            logger.error(f"❌ Validation error: {str(ve)}")
+            raise
         except GoogleAdsException as ex:
             logger.error(f"❌ Google Ads API error: {ex}")
             for error in ex.failure.errors:
