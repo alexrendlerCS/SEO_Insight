@@ -145,27 +145,80 @@ def display_metrics(df: pd.DataFrame):
     """Display key performance metrics and data table."""
     st.header("Keyword Performance Metrics")
     
-    # Define required metrics and their fallback values
+    # Convert numeric columns, handling errors gracefully
+    numeric_columns = ['search_volume', 'competition_index', 'impressions', 'clicks', 'CTR', 'cost', 'avg_position', 'avg_monthly_searches']
+    for col in numeric_columns:
+        if col in df.columns:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Define metrics configuration
     metrics = {
-        'impressions': {'fallback': 0, 'label': 'Total Impressions', 'format': '{:,.0f}'},
-        'clicks': {'fallback': 0, 'label': 'Total Clicks', 'format': '{:,.0f}'},
-        'CTR': {'fallback': 0.0, 'label': 'Average CTR', 'format': '{:.2f}%'},
-        'cost': {'fallback': 0.0, 'label': 'Total Cost', 'format': '${:.2f}'},
-        'avg_position': {'fallback': 0.0, 'label': 'Average Position', 'format': '{:.1f}'},
-        'search_volume': {'fallback': 0, 'label': 'Total Search Volume', 'format': '{:,.0f}'},
-        'avg_monthly_searches': {'fallback': 0, 'label': 'Total Monthly Searches', 'format': '{:,.0f}'},
-        'competition_index': {'fallback': 0.0, 'label': 'Average Competition', 'format': '{:.2f}'}
+        'search_volume': {
+            'fallback': 0,
+            'label': 'Total Search Volume',
+            'format': ',.0f',
+            'aggregation': 'sum'
+        },
+        'competition_index': {
+            'fallback': 0.0,
+            'label': 'Average Competition',
+            'format': '.2f',
+            'aggregation': 'mean'
+        },
+        # Optional metrics (no warnings if missing)
+        'impressions': {
+            'fallback': 0,
+            'label': 'Total Impressions',
+            'format': ',.0f',
+            'aggregation': 'sum',
+            'optional': True
+        },
+        'clicks': {
+            'fallback': 0,
+            'label': 'Total Clicks',
+            'format': ',.0f',
+            'aggregation': 'sum',
+            'optional': True
+        },
+        'CTR': {
+            'fallback': 0.0,
+            'label': 'Average CTR',
+            'format': '.2%',
+            'aggregation': 'mean',
+            'optional': True
+        },
+        'cost': {
+            'fallback': 0.0,
+            'label': 'Total Cost',
+            'format': '$,.2f',
+            'aggregation': 'sum',
+            'optional': True
+        },
+        'avg_position': {
+            'fallback': 0.0,
+            'label': 'Average Position',
+            'format': '.1f',
+            'aggregation': 'mean',
+            'optional': True
+        },
+        'avg_monthly_searches': {
+            'fallback': 0,
+            'label': 'Total Monthly Searches',
+            'format': ',.0f',
+            'aggregation': 'sum',
+            'optional': True
+        }
     }
     
     # Calculate metrics with safe fallbacks
     calculated_metrics = {}
     for metric, config in metrics.items():
-        if metric in df.columns:
-            if metric in ['CTR', 'avg_position', 'competition_index']:
+        if metric in df.columns and not df[metric].isna().all():
+            if config['aggregation'] == 'mean':
                 calculated_metrics[metric] = df[metric].mean()
             else:
                 calculated_metrics[metric] = df[metric].sum()
-        else:
+        elif not config.get('optional', False):
             st.warning(f"⚠️ {config['label']} data is not available for this dataset.")
             calculated_metrics[metric] = config['fallback']
     
@@ -179,12 +232,17 @@ def display_metrics(df: pd.DataFrame):
     # Display other metrics if available
     metric_index = 1
     for metric, config in metrics.items():
-        if metric in df.columns:
+        if metric in calculated_metrics and not config.get('optional', False):
             with [col2, col3, col4][metric_index % 3]:
-                st.metric(
-                    config['label'],
-                    config['format'].format(calculated_metrics[metric])
-                )
+                value = calculated_metrics[metric]
+                if pd.notna(value):  # Only format if value is not NaN
+                    formatted = f"{value:{config['format']}}"
+                    st.metric(
+                        config['label'],
+                        formatted
+                    )
+                else:
+                    st.metric(config['label'], "N/A")
             metric_index += 1
     
     # Display data table with safe formatting
@@ -192,34 +250,35 @@ def display_metrics(df: pd.DataFrame):
     
     # Define column configurations with safe formatting
     column_config = {}
-    for metric, config in metrics.items():
-        if metric in df.columns:
-            if 'format' in config:
-                column_config[metric] = st.column_config.NumberColumn(
-                    config['label'],
-                    format=config['format']
-                )
     
     # Add keyword column if present
     if 'keyword' in df.columns:
-        column_config['keyword'] = st.column_config.TextColumn(
-            'Keyword',
-            help='The search term or keyword'
-        )
+        column_config['keyword'] = st.column_config.TextColumn("Keyword")
     
     # Add competition column if present
     if 'competition' in df.columns:
-        column_config['competition'] = st.column_config.TextColumn(
-            'Competition Level',
-            help='Keyword competition level (LOW, MEDIUM, HIGH)'
-        )
+        column_config['competition'] = st.column_config.TextColumn("Competition Level")
+    
+    # Add numeric columns with formatting
+    for metric, config in metrics.items():
+        if metric in df.columns and pd.api.types.is_numeric_dtype(df[metric]):
+            column_config[metric] = st.column_config.NumberColumn(
+                label=config['label'],
+                help=f"{config['label']} for this keyword"
+            )
+
+
+
     
     # Display the dataframe with configured columns
-    st.dataframe(
-        df,
-        column_config=column_config,
-        use_container_width=True
-    )
+    if column_config:
+        st.dataframe(
+            df,
+            column_config=column_config,
+            use_container_width=True
+        )
+    else:
+        st.warning("No valid columns found in the dataset.")
 
 def perform_clustering(df: pd.DataFrame):
     """Perform keyword clustering with adjustable parameters."""
@@ -305,14 +364,32 @@ def perform_clustering(df: pd.DataFrame):
                 st.session_state.clustered_data = clustered_df
                 st.success("✅ Clustering completed successfully!")
                 
+                # Secondary warning if no real CTR data exists or all values are identical
+                ctr_col = None
+                for col in ['CTR', 'ctr', 'ctr_pct']:
+                    if col in clustered_df.columns:
+                        ctr_col = col
+                        break
+                show_ctr_warning = False
+                if ctr_col is None:
+                    show_ctr_warning = True
+                else:
+                    ctr_vals = clustered_df[ctr_col]
+                    if ctr_vals.isnull().all() or ctr_vals.nunique() == 1:
+                        show_ctr_warning = True
+                if show_ctr_warning:
+                    st.warning("⚠️ Note: No CTR data was found. You can identify high-potential keywords, but cannot evaluate your own keyword performance without live ad data.")
+                
                 # Display cluster visualization
                 try:
                     clusterer = KeywordClusterer(n_clusters=n_clusters, use_transformer=use_transformer)
                     keywords = clustered_df['keyword'].tolist()
                     embeddings, labels = clusterer.cluster_keywords(keywords)
                     
-                    fig = clusterer.visualize_clusters(embeddings, labels, keywords)
+                    fig, summary_df = clusterer.visualize_clusters(embeddings, labels, keywords, clustered_df)
                     st.plotly_chart(fig, use_container_width=True)
+                    st.subheader("🔢 Cluster Summary")
+                    st.dataframe(summary_df, use_container_width=True)
                     
                     # Add descriptive section
                     st.subheader("🔍 Understanding Your Clusters")
@@ -555,13 +632,28 @@ def prepare_case_study():
 
 def show_low_performing_keywords():
     """Display low-performing keywords table with suggestions."""
-    if st.session_state.clustered_data is not None:
+    df = st.session_state.clustered_data if 'clustered_data' in st.session_state else None
+    if df is not None:
+        # --- CTR warning above section ---
+        ctr_col = None
+        for col in ['CTR', 'ctr', 'ctr_pct']:
+            if col in df.columns:
+                ctr_col = col
+                break
+        show_ctr_warning = False
+        if ctr_col is None:
+            show_ctr_warning = True
+        else:
+            ctr_vals = df[ctr_col]
+            if ctr_vals.isnull().all() or (ctr_vals.nunique() == 1 and (ctr_vals == 0.5).all()):
+                show_ctr_warning = True
+        if show_ctr_warning:
+            st.warning("⚠️ Warning: No CTR data detected. The keywords shown below may not be truly 'low-performing' — simulated or default values are used instead.")
+
         st.markdown("### 🔍 Low-Performing Keywords")
         
         # Filter low-performing keywords
-        low_perf = st.session_state.clustered_data[
-            st.session_state.clustered_data['cluster_label'] != -1
-        ].copy()
+        low_perf = df[df['cluster_label'] != -1].copy()
         
         # Add suggestions column if available
         if (

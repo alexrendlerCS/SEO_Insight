@@ -108,57 +108,76 @@ class KeywordClusterer:
             logger.error(f"Error clustering keywords: {str(e)}")
             raise
     
-    def visualize_clusters(self, embeddings: np.ndarray, labels: np.ndarray, keywords: List[str]) -> go.Figure:
+    def visualize_clusters(self, embeddings, labels, keywords, df=None):
         """
         Create interactive visualization of keyword clusters.
+        Only shows hover tooltips, no visible labels.
+        Also returns a summary DataFrame per cluster (excluding -1).
         
         Args:
-            embeddings (np.ndarray): 2D embeddings from UMAP
-            labels (np.ndarray): Cluster labels
-            keywords (List[str]): Original keywords
-            
+            embeddings: 2D array of keyword embeddings
+            labels: Cluster labels for each keyword
+            keywords: List of keywords
+            df: Optional DataFrame with 'CTR' and 'search_volume' columns
         Returns:
-            go.Figure: Interactive Plotly figure
+            (fig, summary_df): Plotly figure and summary DataFrame
         """
-        try:
-            # Create DataFrame for plotting
-            plot_df = pd.DataFrame({
-                'x': embeddings[:, 0],
-                'y': embeddings[:, 1],
-                'cluster': labels,
-                'keyword': keywords
+        import pandas as pd
+        import plotly.graph_objects as go
+        import numpy as np
+        
+        # Create DataFrame for plotting
+        plot_df = pd.DataFrame({
+            'x': embeddings[:, 0],
+            'y': embeddings[:, 1],
+            'cluster': labels,
+            'keyword': keywords
+        })
+        if df is not None:
+            if 'CTR' in df.columns:
+                plot_df['CTR'] = df['CTR'].values
+            if 'search_volume' in df.columns:
+                plot_df['search_volume'] = df['search_volume'].values
+        
+        # Create scatter plot
+        fig = go.Figure()
+        for cluster in range(max(labels) + 1):
+            cluster_data = plot_df[plot_df['cluster'] == cluster].copy()
+            fig.add_trace(go.Scatter(
+                x=cluster_data['x'],
+                y=cluster_data['y'],
+                mode='markers',
+                name=f'Cluster {cluster}',
+                hovertext=cluster_data['keyword'],
+                hoverinfo='text',
+                marker=dict(size=10)
+            ))
+        fig.update_layout(
+            title='Keyword Clusters',
+            xaxis_title='Embedding X',
+            yaxis_title='Embedding Y',
+            legend_title='Cluster'
+        )
+        # Build summary DataFrame (exclude cluster -1)
+        summary_rows = []
+        for cluster in sorted(set(labels)):
+            if cluster == -1:
+                continue
+            cluster_df = plot_df[plot_df['cluster'] == cluster]
+            n_keywords = len(cluster_df)
+            avg_ctr = float(np.nanmean(cluster_df['CTR'])) * 100 if 'CTR' in cluster_df.columns else None
+            avg_ctr = round(avg_ctr, 2) if avg_ctr is not None else None
+            avg_sv = int(np.nanmean(cluster_df['search_volume'])) if 'search_volume' in cluster_df.columns else None
+            avg_sv_fmt = f"{avg_sv:,}" if avg_sv is not None else None
+            summary_rows.append({
+                'Cluster ID': cluster,
+                'Num Keywords': n_keywords,
+                'Avg CTR (%)': avg_ctr,
+                'Avg Search Volume': avg_sv_fmt
             })
-            
-            # Create scatter plot
-            fig = go.Figure()
-            
-            # Add traces for each cluster
-            for cluster in range(max(labels) + 1):  # Use actual number of clusters
-                cluster_data = plot_df[plot_df['cluster'] == cluster]
-                fig.add_trace(go.Scatter(
-                    x=cluster_data['x'],
-                    y=cluster_data['y'],
-                    mode='markers+text',
-                    name=f'Cluster {cluster}',
-                    text=cluster_data['keyword'],
-                    textposition="top center",
-                    marker=dict(size=10)
-                ))
-            
-            # Update layout
-            fig.update_layout(
-                title='Keyword Clusters',
-                xaxis_title='UMAP 1',
-                yaxis_title='UMAP 2',
-                showlegend=True,
-                hovermode='closest'
-            )
-            
-            return fig
-            
-        except Exception as e:
-            logger.error(f"Error visualizing clusters: {str(e)}")
-            raise
+        summary_df = pd.DataFrame(summary_rows)
+        return fig, summary_df
+
 
 def cluster_low_performance_keywords(
     df: pd.DataFrame,
@@ -167,7 +186,8 @@ def cluster_low_performance_keywords(
     use_transformer: bool = False
 ) -> pd.DataFrame:
     """
-    Cluster low-performing keywords based on CTR threshold.
+    Cluster low-performing keywords based on CTR and text similarity.
+    If 'CTR' column is missing or invalid, fill with default value 0.5 and log a warning.
     
     Args:
         df (pd.DataFrame): DataFrame with keyword performance data
@@ -179,6 +199,21 @@ def cluster_low_performance_keywords(
         pd.DataFrame: Original DataFrame with added cluster_label column
     """
     try:
+        # Handle missing or invalid 'CTR' column
+        if 'CTR' not in df.columns:
+            logger.warning("'CTR' column missing from input DataFrame. Filling with default value 0.5.")
+            df['CTR'] = 0.5
+        else:
+            ctr_col = df['CTR']
+            if ctr_col.isnull().all() or (ctr_col == 0).all():
+                logger.warning("'CTR' column is all nulls or all zeroes. Filling with default value 0.5.")
+                df['CTR'] = 0.5
+            else:
+                # If some values are null, fill only those
+                if ctr_col.isnull().any():
+                    logger.info("'CTR' column contains nulls. Filling nulls with default value 0.5.")
+                    df['CTR'] = ctr_col.fillna(0.5)
+        
         # Filter low-performing keywords
         low_perf_df = df[df['CTR'] < ctr_threshold].copy()
         
