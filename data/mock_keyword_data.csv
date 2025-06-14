@@ -1,16 +1,101 @@
 keyword,clicks,impressions,CTR,conversions,search_volume,competition_index
-cheap sneakers,8,1200,0.67,1,20795,64
-buy shoes online,12,1500,0.8,2,5860,60
-best running shoes,20,1000,2.0,3,43158,21
-free shipping shoes,9,1300,0.69,1,49732,33
-shoe deals,3,1000,0.3,0,16284,76
-comfortable heels,18,1200,1.5,2,11265,58
-men's dress shoes,25,1100,2.27,4,21850,22
-discount athletic shoes,6,1100,0.55,1,42194,89
-kids sneakers,15,950,1.58,2,26962,49
-sandals for summer,10,1050,0.95,1,49131,91
-orthopedic shoes,7,950,0.74,1,21023,59
-leather boots,14,1200,1.17,2,46090,42
-vegan running shoes,5,800,0.63,0,6685,92
-fashionable sneakers,17,1350,1.26,3,5769,60
-limited edition shoes,4,1000,0.4,1,7433,80
+craft beer,8,1501,1.67,4,18284,46
+local brewery,21,1095,1.84,0,12253,21
+IPA beer,16,1524,2.04,4,24128,64
+lager beer,12,1519,0.84,2,32932,22
+buy beer online,9,1548,0.16,3,14435,32
+non-alcoholic beer,22,1137,0.18,0,49078,39
+beer delivery,8,852,1.84,3,18296,26
+cold beer near me,27,1591,2.64,4,35445,71
+best beer brands,20,1016,1.66,4,18245,93
+gluten-free beer,24,1563,2.23,0,34124,22
+light beer,12,987,1.22,2,34899,68
+beer for parties,12,1179,0.7,1,48919,28
+beer deals,25,1292,0.29,0,48225,58
+imported beer,22,840,1.0,1,40247,21
+seasonal beer,5,956,0.63,1,34222,70
+beer and food pairing,9,814,0.85,2,31211,28
+beer tasting events,25,864,1.93,1,42220,85
+sustainable brewing,4,1320,0.8,1,31646,18
+organic beer,23,1143,0.72,2,43649,80
+microbrewery,22,928,0.21,1,28049,37
+stout beer,3,1447,2.48,1,19069,87
+pale ale,25,1271,1.07,1,37580,61
+beer reviews,13,862,1.45,0,36843,92
+best beer 2025,7,938,1.71,0,7849,25
+low carb beer,3,1298,1.59,0,45158,78
+stout beer guide,29,1392,3.01,2,28289,21
+craft beer recommendations,22,1191,1.91,4,49690,34
+best beer brands near me,2,1474,2.63,1,40257,61
+cold beer near me near me,13,1218,1.17,1,14823,94
+best beer 2025 guide,27,1088,2.29,2,46975,62
+pale ale recommendations,23,1178,1.22,1,14540,32
+cold beer near me near me wholesale,13,1572,1.26,0,21364,25
+non-alcoholic beer wholesale,26,1289,1.95,4,9611,66
+best beer brands near me guide,18,1030,1.47,3,32663,48
+local brewery guide,28,840,1.07,1,43646,62
+imported beer near me,28,827,0.66,0,35977,51
+non-alcoholic beer wholesale wholesale,11,934,0.33,3,34168,67
+local brewery wholesale,29,1000,0.38,4,30471,48
+beer deals recommendations,29,1579,1.75,3,27687,23
+local brewery guide discount,17,832,0.66,0,5851,14
+seasonal beer discount,16,847,1.38,3,23071,44
+local brewery wholesale tips,16,1302,1.97,2,11833,84
+craft beer near me,20,1206,2.0,3,16938,27
+best beer brands near me tips,13,1373,2.94,1,40195,85
+sustainable brewing near me,24,1527,1.58,1,31144,18
+imported beer tips,21,898,0.2,2,9000,83
+beer delivery guide,26,1483,0.31,0,10052,67
+low carb beer guide,4,1525,1.91,1,40506,26
+beer reviews tips,6,1346,1.55,4,33074,16
+beer deals recommendations tips,20,1538,2.5,1,43155,55
+IPA beer recommendations,8,1412,0.44,1,45770,22
+best beer 2025 guide wholesale,22,1261,0.17,0,37320,49
+cold beer near me discount,10,1442,0.19,3,43304,51
+organic beer recommendations,8,1568,1.53,1,8913,18
+local brewery guide discount tips,19,804,0.25,2,22450,59
+non-alcoholic beer wholesale wholesale near me,5,1017,2.36,3,29107,36
+imported beer tips guide,26,1302,1.31,4,25764,75
+seasonal beer tips,29,1566,2.25,0,48404,14
+non-alcoholic beer near me,15,1197,0.49,4,25491,38
+non-alcoholic beer wholesale wholesale near me guide,19,1594,2.88,3,43494,46
+low carb beer tips,27,1192,0.34,3,8373,47
+best beer 2025 guide recommendations,10,1006,1.91,3,17161,92
+organic beer recommendations tips,27,814,0.95,4,36996,17
+light beer tips,22,1353,2.13,3,32122,74
+imported beer tips near me,3,1260,3.41,4,39850,26
+local brewery guide recommendations,21,1490,1.16,3,32350,80
+gluten-free beer wholesale,29,1374,0.48,2,32472,54
+pale ale wholesale,16,1542,2.99,3,33761,13
+cold beer near me near me wholesale near me,29,1040,0.58,4,30351,45
+non-alcoholic beer wholesale wholesale near me guide discount,8,1363,1.8,1,28132,79
+cold beer near me near me recommendations,13,895,0.22,3,20305,40
+local brewery wholesale tips guide,9,1533,0.57,1,14817,28
+best beer 2025 guide guide,16,1284,1.46,2,16261,70
+seasonal beer discount discount,4,1206,1.11,0,5417,63
+local brewery guide guide,15,1030,2.06,2,46576,48
+best beer brands near me wholesale,18,1548,1.66,3,25358,83
+seasonal beer discount near me,5,1454,0.19,1,8267,28
+light beer tips discount,19,970,0.63,1,22209,48
+non-alcoholic beer near me near me,9,1340,2.06,4,29052,76
+best beer brands near me guide near me,5,835,2.59,1,43513,54
+cold beer near me near me wholesale recommendations,3,1324,0.55,4,31092,22
+local brewery wholesale tips guide wholesale,7,959,1.36,0,16338,67
+best beer brands near me guide recommendations,23,1498,0.27,3,5412,29
+local brewery guide guide discount,11,1042,1.6,4,12543,81
+beer delivery guide near me,5,885,2.15,0,45355,70
+sustainable brewing wholesale,23,1595,2.83,1,38496,48
+light beer tips guide,19,1377,0.59,1,28548,10
+microbrewery recommendations,27,1481,1.53,0,32384,12
+stout beer recommendations,13,1356,3.31,1,49425,86
+local brewery guide discount tips wholesale,3,1373,0.41,0,43756,71
+best beer brands discount,11,1445,1.96,4,23888,72
+beer reviews tips wholesale,5,1595,2.19,4,40735,34
+non-alcoholic beer wholesale wholesale near me guide wholesale,15,827,0.63,0,22506,65
+local brewery recommendations,17,1419,2.49,4,25463,42
+non-alcoholic beer wholesale wholesale near me guide wholesale guide,16,1355,0.85,4,22955,47
+microbrewery recommendations wholesale,9,1139,0.15,4,42841,15
+best beer brands near me tips guide,15,1597,1.0,2,10104,67
+local brewery wholesale discount,24,1130,0.52,3,39911,53
+stout beer discount,29,1439,2.27,1,28190,54
+non-alcoholic beer wholesale wholesale near me guide wholesale tips,26,1305,0.83,2,12357,41

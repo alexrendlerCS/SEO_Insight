@@ -296,23 +296,119 @@ def prepare_case_study_data(clustered_df, suggestions, estimated_ctrs):
 
 def export_case_study_report(case_study_df, suggestions):
     """
-    Generate an HTML report summarizing the case study results.
-    
-    Args:
-        case_study_df (pd.DataFrame): DataFrame containing keywords, original/estimated CTRs, uplift.
-        suggestions (dict): Dictionary with 'keywords' and 'descriptions' from LLM.
-
-    Returns:
-        str: HTML report content.
+    Generate an HTML report summarizing the case study results with modern styling.
     """
     from io import StringIO
     import numpy as np
+    from datetime import datetime
 
     html = StringIO()
-    html.write("<html><head><title>SEO Case Study Report</title></head><body>")
-    html.write("<h1>📊 SEO Case Study Report</h1>")
+    html.write("""
+    <html>
+    <head>
+    <title>SEO Case Study Report</title>
+    <style>
+        body {
+            background: #f7f9fa;
+            font-family: 'Segoe UI', Arial, sans-serif;
+            color: #222;
+            margin: 0;
+            padding: 0;
+        }
+        .container {
+            max-width: 900px;
+            margin: 30px auto 30px auto;
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+            padding: 32px 36px 24px 36px;
+        }
+        .section {
+            background: #f3f6fa;
+            border-radius: 8px;
+            margin-bottom: 32px;
+            padding: 24px 28px 18px 28px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+        }
+        h1 {
+            font-size: 2.5em;
+            margin-bottom: 0.2em;
+            color: #0072C6;
+            background: linear-gradient(90deg, #e3f0fc 60%, #fff 100%);
+            padding: 18px 0 18px 18px;
+            border-bottom: 3px solid #0072C6;
+            border-radius: 12px 12px 0 0;
+        }
+        h2 {
+            font-size: 1.5em;
+            color: #34495e;
+            margin-top: 0;
+            margin-bottom: 0.7em;
+            border-left: 6px solid #0072C6;
+            padding-left: 12px;
+            background: #eaf3fa;
+            border-radius: 6px;
+        }
+        ul {
+            margin-top: 0.5em;
+            margin-bottom: 0.5em;
+        }
+        .summary-list li {
+            margin-bottom: 0.4em;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0 10px 0;
+            font-size: 1.05em;
+        }
+        th, td {
+            padding: 10px 12px;
+            border: 1px solid #e0e6ed;
+            text-align: left;
+        }
+        th {
+            background: #eaf3fa;
+            color: #0072C6;
+            font-weight: 600;
+        }
+        tr:nth-child(even) {
+            background: #f7fafd;
+        }
+        tr:nth-child(odd) {
+            background: #fff;
+        }
+        tr:hover {
+            background: #f1f7ff;
+        }
+        .ctr-uplift-pos {
+            color: #28a745;
+            font-weight: bold;
+        }
+        .ctr-uplift-neg {
+            color: #d9534f;
+            font-weight: bold;
+        }
+        .bold-keyword {
+            font-weight: bold;
+            background: #fffbe6;
+        }
+        .footer {
+            margin-top: 40px;
+            padding: 18px 0 0 0;
+            text-align: center;
+            color: #888;
+            font-size: 1em;
+        }
+    </style>
+    </head>
+    <body>
+    <div class="container">
+    <h1>📊 SEO Case Study Report</h1>
+    """)
 
     # Executive Summary block
+    html.write("<div class='section'>")
     try:
         total_keywords = len(case_study_df)
         valid_ctr_rows = case_study_df.dropna(subset=["original_ctr", "estimated_ctr"])
@@ -328,7 +424,7 @@ def export_case_study_report(case_study_df, suggestions):
             click_gain = None
 
         html.write("<h2>📌 Executive Summary</h2>")
-        html.write("<ul style='font-size:1.1em;'>")
+        html.write("<ul class='summary-list'>")
         html.write(f"<li><strong>Total Keywords Analyzed:</strong> {total_keywords}</li>")
         html.write(f"<li><strong>Keywords with CTR data:</strong> {len(valid_ctr_rows)}</li>")
         html.write(f"<li><strong>Average Original CTR:</strong> <span style='color:#0072C6;'>{avg_original_ctr:.2f}%</span></li>")
@@ -342,8 +438,10 @@ def export_case_study_report(case_study_df, suggestions):
         html.write("</ul>")
     except Exception as e:
         html.write("<p><em>Executive summary unavailable due to data issues.</em></p>")
+    html.write("</div>")
 
     # 📌 Recommendations section
+    html.write("<div class='section'>")
     html.write("<h2>📌 Recommendations</h2>")
     try:
         ctr_valid = False
@@ -379,11 +477,69 @@ def export_case_study_report(case_study_df, suggestions):
             html.write("</ul>")
     except Exception as e:
         html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
+    html.write("</div>")
 
     # Keyword Suggestion Table
+    html.write("<div class='section'>")
     html.write("<h2>📝 Keyword Suggestions and Projections</h2>")
-    html.write(case_study_df.to_html(index=False))
+    # Build styled table manually for more control
+    try:
+        # Identify top 3 keywords by CTR uplift for bolding
+        top3_set = set()
+        if 'ctr_uplift' in case_study_df.columns:
+            top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
+            top3_set = set(top3['keyword'])
+        html.write("<table>")
+        # Table header
+        html.write("<tr>")
+        for col in case_study_df.columns:
+            html.write(f"<th>{col.replace('_', ' ').title()}</th>")
+        html.write("</tr>")
+        # Table rows
+        for _, row in case_study_df.iterrows():
+            keyword = row['keyword']
+            html.write("<tr>")
+            for col in case_study_df.columns:
+                val = row[col]
+                cell = val
+                # Bold top 3 keywords
+                if col == 'keyword' and keyword in top3_set:
+                    cell = f"<span class='bold-keyword'>{val}</span>"
+                # Color-code CTR uplift
+                elif col == 'ctr_uplift':
+                    try:
+                        cell_val = float(val)
+                        if cell_val > 0:
+                            cell = f"<span class='ctr-uplift-pos'>+{cell_val:.2f}%</span>"
+                        elif cell_val < 0:
+                            cell = f"<span class='ctr-uplift-neg'>{cell_val:.2f}%</span>"
+                        else:
+                            cell = f"{cell_val:.2f}%"
+                    except Exception:
+                        cell = val
+                # Format floats for CTR columns
+                elif col in ['original_ctr', 'estimated_ctr']:
+                    try:
+                        cell = f"{float(val):.2f}%"
+                    except Exception:
+                        cell = val
+                # Format ints with commas for impressions/search_volume
+                elif col in ['impressions', 'search_volume']:
+                    try:
+                        cell = f"{int(val):,}"
+                    except Exception:
+                        cell = val
+                html.write(f"<td>{cell}</td>")
+            html.write("</tr>")
+        html.write("</table>")
+    except Exception as e:
+        html.write("<p><em>Could not render table due to data issues.</em></p>")
+    html.write("</div>")
 
-    # Close
-    html.write("</body></html>")
+    # Footer
+    html.write("<div class='footer'>")
+    html.write(f"Report generated on {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} &mdash; <strong>Generated by SEO Insights Tool</strong>")
+    html.write("</div>")
+
+    html.write("</div></body></html>")
     return html.getvalue() 
