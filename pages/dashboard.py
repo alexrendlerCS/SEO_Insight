@@ -11,6 +11,8 @@ import os
 from typing import Dict, List
 import json
 import logging
+import time
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 from services.google_ads import GoogleAdsService
 from services.llm_generator import LLMGenerator
@@ -267,9 +269,6 @@ def display_metrics(df: pd.DataFrame):
                 help=f"{config['label']} for this keyword"
             )
 
-
-
-    
     # Display the dataframe with configured columns
     if column_config:
         st.dataframe(
@@ -441,30 +440,58 @@ def generate_suggestions():
     if st.button("Generate Suggestions"):
         with st.spinner("🔄 Generating suggestions..."):
             try:
-                # Initialize LLM
+                logger.info("Initializing LLMGenerator()...")
                 llm = LLMGenerator()
-                
+                logger.info("LLMGenerator initialized.")
+
                 # Get low-performing keywords
                 low_perf_keywords = st.session_state.clustered_data[
                     st.session_state.clustered_data['cluster_label'] != -1
                 ]['keyword'].tolist()
-                
+                logger.info(f"Generating suggestions for {len(low_perf_keywords)} keywords")
+                if len(low_perf_keywords) > 10:
+                    logger.warning("Too many keywords. Limiting to 10 for debugging.")
+                    low_perf_keywords = low_perf_keywords[:10]
+
                 # Generate suggestions
-                suggestions = llm.generate_keyword_suggestions(low_perf_keywords)
-                meta_descriptions = {
-                    keyword: llm.generate_meta_description(keyword)
-                    for keyword in low_perf_keywords
-                }
-                
+                try:
+                    logger.info("Calling llm.generate_keyword_suggestions()...")
+                    start_time = time.time()
+                    suggestions = llm.generate_keyword_suggestions(low_perf_keywords)
+                    logger.info(f"llm.generate_keyword_suggestions() completed in {time.time() - start_time:.2f}s.")
+                except Exception as e:
+                    logger.error(f"Error in generate_keyword_suggestions: {e}")
+                    raise
+
+                # Parallel meta description generation
+                meta_descriptions = {}
+                logger.info("Starting parallel meta description generation...")
+                start_time = time.time()
+                with ThreadPoolExecutor(max_workers=5) as executor:
+                    future_to_keyword = {
+                        executor.submit(llm.generate_meta_description, keyword): keyword
+                        for keyword in low_perf_keywords
+                    }
+                    for future in as_completed(future_to_keyword):
+                        keyword = future_to_keyword[future]
+                        try:
+                            desc = future.result()
+                            meta_descriptions[keyword] = desc
+                            logger.info(f"Meta description for '{keyword}' completed.")
+                        except Exception as e:
+                            logger.error(f"Error in generate_meta_description for '{keyword}': {e}")
+                            meta_descriptions[keyword] = "Error generating meta description."
+                logger.info(f"All meta descriptions generated in {time.time() - start_time:.2f}s.")
+
                 # Store suggestions
                 st.session_state.suggestions = {
                     'keywords': suggestions,
                     'descriptions': meta_descriptions
                 }
-                
+
                 # Initialize estimated_ctrs dictionary
                 st.session_state.estimated_ctrs = {}
-                
+
                 st.success("✅ Suggestions generated successfully!")
             except Exception as e:
                 logger.error(f"Error generating suggestions: {str(e)}")
