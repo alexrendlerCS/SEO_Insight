@@ -251,152 +251,139 @@ def cluster_low_performance_keywords(
         logger.error(f"Error clustering low-performance keywords: {str(e)}")
         raise
 
-def prepare_case_study_data(
-    df: pd.DataFrame,
-    suggestions: Dict[str, List[str]],
-    estimated_ctrs: Dict[str, float]
-) -> pd.DataFrame:
+def prepare_case_study_data(clustered_df, suggestions, estimated_ctrs):
     """
-    Prepare case study data comparing original and suggested keywords.
-    
-    Args:
-        df (pd.DataFrame): Original keyword data
-        suggestions (Dict[str, List[str]]): Suggested keywords for each original keyword
-        estimated_ctrs (Dict[str, float]): Estimated CTRs for suggested keywords
-        
-    Returns:
-        pd.DataFrame: Case study data with comparisons
+    Prepare a DataFrame for the case study report, including original and estimated CTRs, uplift, and a flag for auto-estimated values.
     """
-    try:
-        case_study_data = []
-        
-        for keyword, alternatives in suggestions.items():
-            original_row = df[df['keyword'] == keyword].iloc[0]
-            original_ctr = original_row['CTR']
-            estimated_ctr = estimated_ctrs.get(keyword, original_ctr)
-            
-            case_study_data.append({
-                'keyword': keyword,
-                'original_ctr': original_ctr,
-                'suggested_keywords': ' | '.join(alternatives),
-                'estimated_ctr': estimated_ctr,
-                'ctr_uplift': estimated_ctr - original_ctr
-            })
-        
-        return pd.DataFrame(case_study_data)
-        
-    except Exception as e:
-        logger.error(f"Error preparing case study data: {str(e)}")
-        raise
+    import numpy as np
+    rows = []
+    for _, row in clustered_df.iterrows():
+        keyword = row['keyword']
+        original_ctr = row['CTR'] if 'CTR' in row else np.nan
+        # Compute smart-estimate
+        if original_ctr < 0.5:
+            smart_estimate = original_ctr + 0.3
+        elif original_ctr < 1.0:
+            smart_estimate = original_ctr + 0.2
+        elif original_ctr < 2.0:
+            smart_estimate = original_ctr + 0.1
+        else:
+            smart_estimate = original_ctr
+        smart_estimate = min(smart_estimate, 3.0)
+        # Use user-provided estimated CTR if available
+        if keyword in estimated_ctrs:
+            estimated_ctr = estimated_ctrs[keyword]
+            auto_estimated = np.isclose(estimated_ctr, smart_estimate)
+        else:
+            estimated_ctr = smart_estimate
+            auto_estimated = True
+        ctr_uplift = estimated_ctr - original_ctr if not np.isnan(original_ctr) and not np.isnan(estimated_ctr) else np.nan
+        row_dict = {
+            'keyword': keyword,
+            'original_ctr': original_ctr,
+            'estimated_ctr': estimated_ctr,
+            'ctr_uplift': ctr_uplift,
+            'auto_estimated': auto_estimated
+        }
+        # Add impressions if present
+        if 'impressions' in row:
+            row_dict['impressions'] = row['impressions']
+        # Add search_volume if present
+        if 'search_volume' in row:
+            row_dict['search_volume'] = row['search_volume']
+        rows.append(row_dict)
+    return pd.DataFrame(rows)
 
-def export_case_study_report(case_study_df: pd.DataFrame, suggestions: Dict = None) -> str:
+def export_case_study_report(case_study_df, suggestions):
     """
-    Generate a comprehensive case study report in HTML format.
+    Generate an HTML report summarizing the case study results.
     
     Args:
-        case_study_df: DataFrame containing the case study data
-        suggestions: Dictionary containing keyword suggestions and meta descriptions
-    
+        case_study_df (pd.DataFrame): DataFrame containing keywords, original/estimated CTRs, uplift.
+        suggestions (dict): Dictionary with 'keywords' and 'descriptions' from LLM.
+
     Returns:
-        str: HTML content of the report
+        str: HTML report content.
     """
-    # Calculate summary metrics
-    total_keywords = len(case_study_df)
-    avg_ctr_uplift = case_study_df['ctr_uplift'].mean()
-    max_uplift = case_study_df['ctr_uplift'].max()
-    min_uplift = case_study_df['ctr_uplift'].min()
-    
-    # Generate HTML report
-    html_content = f"""
-    <html>
-    <head>
-        <style>
-            body {{ font-family: Arial, sans-serif; margin: 40px; }}
-            h1 {{ color: #2c3e50; }}
-            h2 {{ color: #34495e; margin-top: 30px; }}
-            .summary {{ background-color: #f8f9fa; padding: 20px; border-radius: 5px; }}
-            .metric {{ margin: 10px 0; }}
-            .keyword-section {{ margin: 20px 0; padding: 15px; border: 1px solid #dee2e6; border-radius: 5px; }}
-            .suggestion {{ color: #28a745; }}
-            .meta-desc {{ color: #6c757d; font-style: italic; }}
-            table {{ width: 100%; border-collapse: collapse; margin: 20px 0; }}
-            th, td {{ padding: 12px; text-align: left; border-bottom: 1px solid #dee2e6; }}
-            th {{ background-color: #f8f9fa; }}
-            .highlight {{ background-color: #e8f4f8; }}
-        </style>
-    </head>
-    <body>
-        <h1>SEO Optimization Case Study Report</h1>
-        <div class="summary">
-            <h2>Executive Summary</h2>
-            <div class="metric">Total Keywords Analyzed: {total_keywords}</div>
-            <div class="metric">Average CTR Uplift: {avg_ctr_uplift:.2f}%</div>
-            <div class="metric">Maximum CTR Uplift: {max_uplift:.2f}%</div>
-            <div class="metric">Minimum CTR Uplift: {min_uplift:.2f}%</div>
-        </div>
-        
-        <h2>Detailed Analysis</h2>
-        <table>
-            <tr>
-                <th>Keyword</th>
-                <th>Original CTR</th>
-                <th>Estimated CTR</th>
-                <th>CTR Uplift</th>
-            </tr>
-    """
-    
-    # Add keyword rows
-    for _, row in case_study_df.iterrows():
-        html_content += f"""
-            <tr>
-                <td>{row['keyword']}</td>
-                <td>{row['original_ctr']:.2f}%</td>
-                <td>{row['estimated_ctr']:.2f}%</td>
-                <td class="highlight">{row['ctr_uplift']:.2f}%</td>
-            </tr>
-        """
-    
-    html_content += """
-        </table>
-        
-        <h2>Keyword Recommendations</h2>
-    """
-    
-    # Add detailed recommendations if suggestions are provided
-    if suggestions:
-        for keyword, alts in suggestions['keywords'].items():
-            html_content += f"""
-            <div class="keyword-section">
-                <h3>{keyword}</h3>
-                <div class="suggestion">
-                    <strong>Suggested Alternatives:</strong><br>
-                    {', '.join(alts)}
-                </div>
-                <div class="meta-desc">
-                    <strong>Meta Description:</strong><br>
-                    {suggestions['descriptions'][keyword]}
-                </div>
-            </div>
-            """
-    
-    html_content += """
-        <h2>Implementation Recommendations</h2>
-        <ol>
-            <li>Prioritize keywords with the highest CTR uplift potential</li>
-            <li>Implement suggested meta descriptions for improved click-through rates</li>
-            <li>Monitor performance after implementing changes</li>
-            <li>Regularly review and update keyword strategy based on results</li>
-        </ol>
-        
-        <h2>Next Steps</h2>
-        <ul>
-            <li>Review and approve suggested keyword changes</li>
-            <li>Update meta descriptions for selected keywords</li>
-            <li>Set up tracking for new keyword performance</li>
-            <li>Schedule follow-up analysis in 30 days</li>
-        </ul>
-    </body>
-    </html>
-    """
-    
-    return html_content 
+    from io import StringIO
+    import numpy as np
+
+    html = StringIO()
+    html.write("<html><head><title>SEO Case Study Report</title></head><body>")
+    html.write("<h1>📊 SEO Case Study Report</h1>")
+
+    # Executive Summary block
+    try:
+        total_keywords = len(case_study_df)
+        valid_ctr_rows = case_study_df.dropna(subset=["original_ctr", "estimated_ctr"])
+        avg_original_ctr = valid_ctr_rows["original_ctr"].mean()
+        avg_estimated_ctr = valid_ctr_rows["estimated_ctr"].mean()
+        avg_uplift = valid_ctr_rows["ctr_uplift"].mean()
+        has_impressions = "impressions" in case_study_df.columns
+        total_impressions = valid_ctr_rows["impressions"].sum() if has_impressions else None
+        # Estimated Click Gain
+        if has_impressions:
+            click_gain = ((valid_ctr_rows["estimated_ctr"] - valid_ctr_rows["original_ctr"]) * valid_ctr_rows["impressions"] / 100).sum()
+        else:
+            click_gain = None
+
+        html.write("<h2>📌 Executive Summary</h2>")
+        html.write("<ul style='font-size:1.1em;'>")
+        html.write(f"<li><strong>Total Keywords Analyzed:</strong> {total_keywords}</li>")
+        html.write(f"<li><strong>Keywords with CTR data:</strong> {len(valid_ctr_rows)}</li>")
+        html.write(f"<li><strong>Average Original CTR:</strong> <span style='color:#0072C6;'>{avg_original_ctr:.2f}%</span></li>")
+        html.write(f"<li><strong>Average Estimated CTR:</strong> <span style='color:#0072C6;'>{avg_estimated_ctr:.2f}%</span></li>")
+        delta_color = '#28a745' if avg_uplift > 0 else '#d9534f'
+        html.write(f"<li><strong>Average CTR Uplift:</strong> <span style='color:{delta_color};'>{avg_uplift:+.2f}%</span></li>")
+        if total_impressions is not None:
+            html.write(f"<li><strong>Total Impressions:</strong> {int(total_impressions):,}</li>")
+        if click_gain is not None:
+            html.write(f"<li><strong>Estimated Click Gain:</strong> <span style='color:#0072C6;'>{int(click_gain):,}</span></li>")
+        html.write("</ul>")
+    except Exception as e:
+        html.write("<p><em>Executive summary unavailable due to data issues.</em></p>")
+
+    # 📌 Recommendations section
+    html.write("<h2>📌 Recommendations</h2>")
+    try:
+        ctr_valid = False
+        if {'original_ctr', 'estimated_ctr', 'ctr_uplift'}.issubset(case_study_df.columns):
+            ctr_vals = case_study_df['original_ctr']
+            if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
+                ctr_valid = True
+        if ctr_valid:
+            # Top 3 keywords by CTR uplift
+            top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
+            top3_keywords = top3['keyword'].tolist()
+            html.write("<ul>")
+            html.write(f"<li>Focus on improving campaigns using: <strong>{', '.join(top3_keywords)}</strong> — these show the strongest projected uplift.</li>")
+            # Top suggestions for each
+            if suggestions and 'keywords' in suggestions:
+                for kw in top3_keywords:
+                    alts = suggestions['keywords'].get(kw, [])
+                    if alts:
+                        html.write(f"<li>Test new ad copy using suggestions for <strong>{kw}</strong>: <em>{', '.join(alts)}</em></li>")
+            html.write("<li>Consider building ad groups or landing pages around these high-impact keywords.</li>")
+            html.write("</ul>")
+        else:
+            # CTR missing or simulated
+            html.write("<ul>")
+            html.write("<li><strong>Note:</strong> CTR data appears to be simulated or unavailable. For deeper performance insights, consider integrating live ad performance data.</li>")
+            # Use search_volume if available and numeric
+            if 'search_volume' in case_study_df.columns and np.issubdtype(case_study_df['search_volume'].dtype, np.number):
+                top5 = case_study_df.sort_values('search_volume', ascending=False).head(5)
+                top5_keywords = top5['keyword'].tolist()
+                if top5_keywords:
+                    html.write(f"<li>These keywords show the highest search volume and could be strong candidates to optimize: <strong>{', '.join(top5_keywords)}</strong>.</li>")
+            html.write("<li>Consider refining your targeting strategy around these topics.</li>")
+            html.write("</ul>")
+    except Exception as e:
+        html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
+
+    # Keyword Suggestion Table
+    html.write("<h2>📝 Keyword Suggestions and Projections</h2>")
+    html.write(case_study_df.to_html(index=False))
+
+    # Close
+    html.write("</body></html>")
+    return html.getvalue() 

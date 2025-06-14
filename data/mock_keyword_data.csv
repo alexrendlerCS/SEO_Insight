@@ -1,16 +1,16 @@
-keyword,clicks,impressions,CTR,conversions
-cheap sneakers,8,1200,0.67,1
-buy shoes online,12,1500,0.80,2
-best running shoes,20,1000,2.00,3
-free shipping shoes,9,1300,0.69,1
-shoe deals,3,1000,0.30,0
-comfortable heels,18,1200,1.50,2
-men's dress shoes,25,1100,2.27,4
-discount athletic shoes,6,1100,0.55,1
-kids sneakers,15,950,1.58,2
-sandals for summer,10,1050,0.95,1
-orthopedic shoes,7,950,0.74,1
-leather boots,14,1200,1.17,2
-vegan running shoes,5,800,0.63,0
-fashionable sneakers,17,1350,1.26,3
-limited edition shoes,4,1000,0.40,1
+keyword,clicks,impressions,CTR,conversions,search_volume,competition_index
+cheap sneakers,8,1200,0.67,1,20795,64
+buy shoes online,12,1500,0.8,2,5860,60
+best running shoes,20,1000,2.0,3,43158,21
+free shipping shoes,9,1300,0.69,1,49732,33
+shoe deals,3,1000,0.3,0,16284,76
+comfortable heels,18,1200,1.5,2,11265,58
+men's dress shoes,25,1100,2.27,4,21850,22
+discount athletic shoes,6,1100,0.55,1,42194,89
+kids sneakers,15,950,1.58,2,26962,49
+sandals for summer,10,1050,0.95,1,49131,91
+orthopedic shoes,7,950,0.74,1,21023,59
+leather boots,14,1200,1.17,2,46090,42
+vegan running shoes,5,800,0.63,0,6685,92
+fashionable sneakers,17,1350,1.26,3,5769,60
+limited edition shoes,4,1000,0.4,1,7433,80

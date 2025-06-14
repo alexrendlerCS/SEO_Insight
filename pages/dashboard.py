@@ -13,6 +13,7 @@ import json
 import logging
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import numpy as np
 
 from services.google_ads import GoogleAdsService
 from services.llm_generator import LLMGenerator
@@ -437,6 +438,62 @@ def generate_suggestions():
         st.warning("⚠️ Please run clustering first to identify low-performing keywords.")
         return
     
+    clustered_df = st.session_state.clustered_data
+    available_keywords = clustered_df[clustered_df['cluster_label'] != -1]
+
+    # --- Keyword filtering options ---
+    filter_options = []
+    if 'CTR' in available_keywords.columns:
+        ctr_vals = available_keywords['CTR']
+        if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
+            filter_options.append('Lowest CTR')
+            filter_options.append('Highest CTR')
+    if 'search_volume' in available_keywords.columns:
+        filter_options.append('Highest Search Volume')
+    filter_options.append('Shortest Keywords')
+    filter_options.append('Random Sample')
+    filter_options.append('Manual Selection')
+
+    # Default filter
+    if 'Lowest CTR' in filter_options:
+        default_filter = 'Lowest CTR'
+    elif 'Highest Search Volume' in filter_options:
+        default_filter = 'Highest Search Volume'
+    else:
+        default_filter = 'Random Sample'
+
+    filter_choice = st.selectbox(
+        "How should keywords be prioritized for suggestions?",
+        filter_options,
+        index=filter_options.index(default_filter)
+    )
+
+    # Slider for top_n
+    top_n = st.slider("How many keywords to generate suggestions for?", min_value=5, max_value=100, value=10)
+    if top_n > 50:
+        st.warning("⚠️ Generating suggestions for many keywords may take a while. Consider starting with a smaller sample.")
+
+    # Apply filter
+    if filter_choice == 'Lowest CTR' and 'CTR' in available_keywords.columns:
+        low_perf_keywords = available_keywords.sort_values('CTR').head(top_n)['keyword'].tolist()
+    elif filter_choice == 'Highest CTR' and 'CTR' in available_keywords.columns:
+        low_perf_keywords = available_keywords.sort_values('CTR', ascending=False).head(top_n)['keyword'].tolist()
+    elif filter_choice == 'Highest Search Volume' and 'search_volume' in available_keywords.columns:
+        low_perf_keywords = available_keywords.sort_values('search_volume', ascending=False).head(top_n)['keyword'].tolist()
+    elif filter_choice == 'Shortest Keywords':
+        low_perf_keywords = available_keywords.assign(length=available_keywords['keyword'].str.len()).sort_values('length').head(top_n)['keyword'].tolist()
+    elif filter_choice == 'Random Sample':
+        low_perf_keywords = available_keywords.sample(n=min(top_n, len(available_keywords)), random_state=42)['keyword'].tolist()
+    elif filter_choice == 'Manual Selection':
+        selected_keywords = st.multiselect(
+            "Select specific keywords:",
+            options=available_keywords['keyword'].tolist(),
+            default=available_keywords['keyword'].tolist()[:top_n]
+        )
+        low_perf_keywords = selected_keywords
+    else:
+        low_perf_keywords = available_keywords['keyword'].tolist()[:top_n]
+
     if st.button("Generate Suggestions"):
         with st.spinner("🔄 Generating suggestions..."):
             try:
@@ -444,14 +501,7 @@ def generate_suggestions():
                 llm = LLMGenerator()
                 logger.info("LLMGenerator initialized.")
 
-                # Get low-performing keywords
-                low_perf_keywords = st.session_state.clustered_data[
-                    st.session_state.clustered_data['cluster_label'] != -1
-                ]['keyword'].tolist()
-                logger.info(f"Generating suggestions for {len(low_perf_keywords)} keywords")
-                if len(low_perf_keywords) > 10:
-                    logger.warning("Too many keywords. Limiting to 10 for debugging.")
-                    low_perf_keywords = low_perf_keywords[:10]
+                logger.info(f"Processing {len(low_perf_keywords)} keywords for suggestion generation.")
 
                 # Generate suggestions
                 try:
@@ -508,9 +558,14 @@ def generate_suggestions():
         - Adjust the estimated CTR to see potential improvements
         """)
         
-        # Initialize estimated_ctrs if not already done
+        # Initialize estimated_ctrs and auto_estimated if not already done
         if 'estimated_ctrs' not in st.session_state:
             st.session_state.estimated_ctrs = {}
+        if 'auto_estimated' not in st.session_state:
+            st.session_state.auto_estimated = {}
+        
+        clustered_df = st.session_state.clustered_data
+        ctr_dict = dict(zip(clustered_df['keyword'], clustered_df['CTR'] if 'CTR' in clustered_df.columns else [None]*len(clustered_df)))
         
         for keyword, alternatives in st.session_state.suggestions['keywords'].items():
             with st.expander(f"Suggestions for: {keyword}"):
@@ -521,27 +576,49 @@ def generate_suggestions():
                         st.write(f"- {alt}")
                 with col2:
                     st.write("Meta Description:")
-                    st.write(st.session_state.suggestions['descriptions'][keyword])
-                
-                # Get current CTR from clustered data
-                current_ctr = float(st.session_state.clustered_data[
-                    st.session_state.clustered_data['keyword'] == keyword
-                ]['CTR'].iloc[0])
-                
-                # Initialize estimated CTR with current CTR if not set
+                    desc = st.session_state.suggestions['descriptions'].get(keyword)
+                    if desc:
+                        st.write(desc)
+                    else:
+                        st.warning(f"No meta description found for '{keyword}' — skipping.")
+                # Get original CTR from clustered data
+                original_ctr = ctr_dict.get(keyword, None)
+                if original_ctr is not None:
+                    st.markdown(f"**Original CTR:** {original_ctr:.2f}%")
+                else:
+                    st.markdown("**Original CTR:** N/A")
+                # Compute smart estimate if not set
                 if keyword not in st.session_state.estimated_ctrs:
-                    st.session_state.estimated_ctrs[keyword] = current_ctr
-                
+                    if original_ctr is not None:
+                        if original_ctr < 0.5:
+                            smart_est = original_ctr + 0.3
+                        elif original_ctr < 1.0:
+                            smart_est = original_ctr + 0.2
+                        elif original_ctr < 2.0:
+                            smart_est = original_ctr + 0.1
+                        else:
+                            smart_est = original_ctr
+                        smart_est = min(smart_est, 3.0)
+                        st.session_state.estimated_ctrs[keyword] = smart_est
+                        st.session_state.auto_estimated[keyword] = True
+                    else:
+                        st.session_state.estimated_ctrs[keyword] = 0.5
+                        st.session_state.auto_estimated[keyword] = True
+                else:
+                    st.session_state.auto_estimated[keyword] = False
                 # Add CTR estimate input
                 estimated_ctr = st.number_input(
                     f"Estimated New CTR for {keyword} (%)",
                     min_value=0.0,
                     max_value=100.0,
                     value=st.session_state.estimated_ctrs[keyword],
-                    step=0.1,
+                    step=0.01,
                     key=f"ctr_{keyword}"
                 )
                 st.session_state.estimated_ctrs[keyword] = estimated_ctr
+                # If user changes the value, mark as not auto-estimated
+                if estimated_ctr != st.session_state.estimated_ctrs[keyword]:
+                    st.session_state.auto_estimated[keyword] = False
 
 def prepare_case_study():
     """Prepare and display case study data."""
