@@ -486,52 +486,6 @@ def export_case_study_report(case_study_df, suggestions):
     </div>
     """)
 
-    # Executive Summary block
-    html.write("<div class='section'>")
-    try:
-        total_keywords = len(case_study_df)
-        valid_ctr_rows = case_study_df.dropna(subset=["original_ctr", "estimated_ctr"])
-        avg_original_ctr = valid_ctr_rows["original_ctr"].mean()
-        avg_estimated_ctr = valid_ctr_rows["estimated_ctr"].mean()
-        avg_uplift = valid_ctr_rows["ctr_uplift"].mean()
-        has_impressions = "impressions" in case_study_df.columns
-        total_impressions = valid_ctr_rows["impressions"].sum() if has_impressions else None
-        # Estimated Click Gain
-        if has_impressions:
-            click_gain = ((valid_ctr_rows["estimated_ctr"] - valid_ctr_rows["original_ctr"]) * valid_ctr_rows["impressions"] / 100).sum()
-        else:
-            click_gain = None
-
-        html.write("<h2>📌 Executive Summary</h2>")
-        html.write("<ul class='summary-list'>")
-        html.write(f"<li><strong>Total Keywords Analyzed:</strong> {total_keywords}</li>")
-        html.write(f"<li><strong>Keywords with CTR data:</strong> {len(valid_ctr_rows)}</li>")
-        html.write(f"<li><strong>Average Original CTR:</strong> <span style='color:#0072C6;'>{avg_original_ctr:.2f}%</span></li>")
-        html.write(f"<li><strong>Average Estimated CTR:</strong> <span style='color:#0072C6;'>{avg_estimated_ctr:.2f}%</span></li>")
-        delta_color = '#28a745' if avg_uplift > 0 else '#d9534f'
-        html.write(f"<li><strong>Average CTR Uplift:</strong> <span style='color:{delta_color};'>{avg_uplift:+.2f}%</span></li>")
-        if total_impressions is not None:
-            html.write(f"<li><strong>Total Impressions:</strong> {int(total_impressions):,}</li>")
-        if click_gain is not None:
-            html.write(f"<li><strong>Estimated Click Gain:</strong> <span style='color:#0072C6;'>{int(click_gain):,}</span></li>")
-        html.write("</ul>")
-    except Exception as e:
-        html.write("<p><em>Executive summary unavailable due to data issues.</em></p>")
-    html.write("</div>")
-
-    # Legend for Opportunity Tags
-    html.write("<div class='section'>")
-    html.write("<h2>📘 Opportunity Tag Legend</h2>")
-    html.write("<ul>")
-    html.write("<li>🔥 High Potential: low CTR but high search volume — great candidate to improve</li>")
-    html.write("<li>🧱 Low CTR, High Impressions: shown often but underperforming — revise or exclude</li>")
-    html.write("<li>💡 Niche Opportunity: not widely searched, but could convert in niche campaigns</li>")
-    html.write("<li>⭐ Branded Growth: brand-related or localized — good for brand expansion</li>")
-    html.write("<li>📉 Overused / Declining: poor performance across the board — consider removing</li>")
-    html.write("<li>🚧 Review Needed: underperforming with no clear reason — audit relevance</li>")
-    html.write("</ul>")
-    html.write("</div>")
-
     # 📌 Recommendations section
     html.write("<div class='section'>")
     html.write("<h2>📌 Recommendations</h2>")
@@ -569,6 +523,58 @@ def export_case_study_report(case_study_df, suggestions):
             html.write("</ul>")
     except Exception as e:
         html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
+    html.write("</div>")
+
+    # 📌 Keyword Suggestion Table Section
+    html.write("<div class='section'>")
+    html.write("<h2>📝 Keyword Suggestions and Projections</h2>")
+    try:
+        ctr_valid = False
+        if {'original_ctr', 'estimated_ctr', 'ctr_uplift'}.issubset(case_study_df.columns):
+            ctr_vals = case_study_df['original_ctr']
+            if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
+                ctr_valid = True
+        if ctr_valid:
+            # Top 3 keywords by CTR uplift
+            top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
+            top3_keywords = top3['keyword'].tolist()
+            html.write("<ul>")
+            html.write(f"<li>Focus on improving campaigns using: <strong>{', '.join(top3_keywords)}</strong> — these show the strongest projected uplift.</li>")
+            # Top suggestions for each
+            if suggestions and 'keywords' in suggestions:
+                for kw in top3_keywords:
+                    alts = suggestions['keywords'].get(kw, [])
+                    if alts:
+                        html.write(f"<li>Test new ad copy using suggestions for <strong>{kw}</strong>: <em>{', '.join(alts)}</em></li>")
+            html.write("<li>Consider building ad groups or landing pages around these high-impact keywords.</li>")
+            html.write("</ul>")
+        else:
+            # CTR missing or simulated
+            html.write("<ul>")
+            html.write("<li><strong>Note:</strong> CTR data appears to be simulated or unavailable. For deeper performance insights, consider integrating live ad performance data.</li>")
+            # Use search_volume if available and numeric
+            if 'search_volume' in case_study_df.columns and np.issubdtype(case_study_df['search_volume'].dtype, np.number):
+                top5 = case_study_df.sort_values('search_volume', ascending=False).head(5)
+                top5_keywords = top5['keyword'].tolist()
+                if top5_keywords:
+                    html.write(f"<li>These keywords show the highest search volume and could be strong candidates to optimize: <strong>{', '.join(top5_keywords)}</strong>.</li>")
+            html.write("<li>Consider refining your targeting strategy around these topics.</li>")
+            html.write("</ul>")
+    except Exception as e:
+        html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
+    html.write("</div>")
+
+    # Legend for Opportunity Tags
+    html.write("<div class='section'>")
+    html.write("<h2>📘 Opportunity Tag Legend</h2>")
+    html.write("<ul>")
+    html.write("<li>🔥 High Potential: low CTR but high search volume — great candidate to improve</li>")
+    html.write("<li>🧱 Low CTR, High Impressions: shown often but underperforming — revise or exclude</li>")
+    html.write("<li>💡 Niche Opportunity: not widely searched, but could convert in niche campaigns</li>")
+    html.write("<li>⭐ Branded Growth: brand-related or localized — good for brand expansion</li>")
+    html.write("<li>📉 Overused / Declining: poor performance across the board — consider removing</li>")
+    html.write("<li>🚧 Review Needed: underperforming with no clear reason — audit relevance</li>")
+    html.write("</ul>")
     html.write("</div>")
 
     # New section for Top 10 Best Performing Keywords
@@ -621,45 +627,6 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in case_study_df.columns) + "<th>Opportunity Type</th></tr>")
     html.write(render_table_rows(case_study_df))
     html.write("</table>")
-    html.write("</div>")
-
-    # 📌 Keyword Suggestion Table Section
-    html.write("<div class='section'>")
-    html.write("<h2>📝 Keyword Suggestions and Projections</h2>")
-    try:
-        ctr_valid = False
-        if {'original_ctr', 'estimated_ctr', 'ctr_uplift'}.issubset(case_study_df.columns):
-            ctr_vals = case_study_df['original_ctr']
-            if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
-                ctr_valid = True
-        if ctr_valid:
-            # Top 3 keywords by CTR uplift
-            top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
-            top3_keywords = top3['keyword'].tolist()
-            html.write("<ul>")
-            html.write(f"<li>Focus on improving campaigns using: <strong>{', '.join(top3_keywords)}</strong> — these show the strongest projected uplift.</li>")
-            # Top suggestions for each
-            if suggestions and 'keywords' in suggestions:
-                for kw in top3_keywords:
-                    alts = suggestions['keywords'].get(kw, [])
-                    if alts:
-                        html.write(f"<li>Test new ad copy using suggestions for <strong>{kw}</strong>: <em>{', '.join(alts)}</em></li>")
-            html.write("<li>Consider building ad groups or landing pages around these high-impact keywords.</li>")
-            html.write("</ul>")
-        else:
-            # CTR missing or simulated
-            html.write("<ul>")
-            html.write("<li><strong>Note:</strong> CTR data appears to be simulated or unavailable. For deeper performance insights, consider integrating live ad performance data.</li>")
-            # Use search_volume if available and numeric
-            if 'search_volume' in case_study_df.columns and np.issubdtype(case_study_df['search_volume'].dtype, np.number):
-                top5 = case_study_df.sort_values('search_volume', ascending=False).head(5)
-                top5_keywords = top5['keyword'].tolist()
-                if top5_keywords:
-                    html.write(f"<li>These keywords show the highest search volume and could be strong candidates to optimize: <strong>{', '.join(top5_keywords)}</strong>.</li>")
-            html.write("<li>Consider refining your targeting strategy around these topics.</li>")
-            html.write("</ul>")
-    except Exception as e:
-        html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
     html.write("</div>")
 
     # Footer
