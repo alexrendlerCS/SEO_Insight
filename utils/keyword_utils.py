@@ -694,20 +694,38 @@ def export_case_study_report(case_study_df, suggestions):
     # New section for Top 10 Worst Performing Keywords
     html.write("<div class='section'>")
     html.write("<h2>🚫 Underperforming & Low Reach (Candidates for Removal)</h2>")
-    # Avoid division by zero and normalize scale by using rank percentiles
-    case_study_df['low_perf_score'] = (
-        case_study_df['search_volume'].rank(pct=True, ascending=True) +
-        case_study_df['impressions'].rank(pct=True, ascending=True) +
-        case_study_df['clicks'].rank(pct=True, ascending=True) +
-        case_study_df['original_ctr'].rank(pct=True, ascending=True)
-    ) / 4  # average of ranks
 
-    # Select 10 keywords with the lowest "low performance score"
-    worst_performing = case_study_df.sort_values('low_perf_score', ascending=True).head(10)
+    # Step 1: Dynamically determine lower quartiles (bottom 25%)
+    ctr_q25 = case_study_df['original_ctr'].quantile(0.25)
+    impr_q25 = case_study_df['impressions'].quantile(0.25)
+    sv_q25 = case_study_df['search_volume'].quantile(0.25)
 
+    # Step 2: Flexible filter — must be in the bottom quartile in at least 2 of the 3 categories
+    condition_ctr = case_study_df['original_ctr'] <= ctr_q25
+    condition_impr = case_study_df['impressions'] <= impr_q25
+    condition_sv = case_study_df['search_volume'] <= sv_q25
+    mask = (condition_ctr.astype(int) + condition_impr.astype(int) + condition_sv.astype(int)) >= 2
+
+    low_scope_df = case_study_df[mask].copy()
+
+    # Step 3: Score these filtered keywords using percentile ranks
+    low_scope_df['low_perf_score'] = (
+        low_scope_df['search_volume'].rank(pct=True, ascending=True) +
+        low_scope_df['impressions'].rank(pct=True, ascending=True) +
+        low_scope_df['clicks'].rank(pct=True, ascending=True) +
+        low_scope_df['original_ctr'].rank(pct=True, ascending=True)
+    ) / 4
+
+    # Step 4: Take the 10 lowest-scoring keywords
+    worst_performing = low_scope_df.sort_values('low_perf_score', ascending=True).head(10)
+
+    # Step 5: Filter out low_perf_score from display columns
+    columns_to_display = [col for col in worst_performing.columns if col != 'low_perf_score']
+
+    # Render the table with filtered columns
     html.write("<table>")
-    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in worst_performing.columns) + "<th>Opportunity Type</th></tr>")
-    html.write(render_table_rows(worst_performing, highlight_keywords=global_top_keywords))
+    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in columns_to_display) + "<th>Opportunity Type</th></tr>")
+    html.write(render_table_rows(worst_performing[columns_to_display], highlight_keywords=global_top_keywords))
     html.write("</table>")
     html.write("</div>")
 
