@@ -400,11 +400,90 @@ def export_case_study_report(case_study_df, suggestions):
             color: #888;
             font-size: 1em;
         }
+        .problem-statement {
+            font-size: 1.05em;
+            line-height: 1.6em;
+            background-color: #f9f9f9;
+            padding: 15px;
+            border-radius: 8px;
+            border-left: 5px solid #0072C6;
+            margin-bottom: 20px;
+        }
+        .toggle-button {
+            background-color: #0072C6;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-bottom: 10px;
+        }
+        .toggle-button:hover {
+            background-color: #005fa3;
+        }
+        .full-table {
+            display: none;
+        }
+        .tag-opportunity {
+            background-color: #f0f4f8;
+            border-radius: 16px;
+            padding: 4px 10px;
+            font-size: 0.9em;
+            display: inline-block;
+            font-weight: 500;
+            color: #444;
+        }
+        .tag-opportunity.neutral {
+            background-color: #e0e0e0;
+            color: #666;
+        }
+        .keyword-toggle-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+        .toggle-button {
+            background-color: #0072C6;
+            color: white;
+            border: none;
+            padding: 12px 28px;
+            font-size: 1.1em;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            width: 100%;
+            max-width: 300px;
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+        }
+        .toggle-button:hover {
+            background-color: #005fa3;
+        }
     </style>
+    <script>
+        function toggleTable() {
+            var fullTable = document.getElementById('full-keyword-table');
+            var button = document.getElementById('toggle-button');
+            if (fullTable.style.display === 'none') {
+                fullTable.style.display = 'table';
+                button.textContent = 'Hide All Keywords';
+            } else {
+                fullTable.style.display = 'none';
+                button.textContent = 'Show All Keywords';
+            }
+        }
+    </script>
     </head>
     <body>
     <div class="container">
     <h1>📊 SEO Case Study Report</h1>
+    """)
+
+    # Problem Statement block
+    html.write("""
+    <div class='problem-statement'>
+    <strong>What This Report Shows:</strong> This SEO analysis evaluates the effectiveness of ad campaign keywords, identifies underperforming terms, and suggests optimized replacements to increase traffic and conversions. The report uses CTR (click-through rate), impressions, and search volume to estimate potential gains, and prioritizes keywords that could benefit from strategic improvement.
+    </div>
     """)
 
     # Executive Summary block
@@ -438,6 +517,19 @@ def export_case_study_report(case_study_df, suggestions):
         html.write("</ul>")
     except Exception as e:
         html.write("<p><em>Executive summary unavailable due to data issues.</em></p>")
+    html.write("</div>")
+
+    # Legend for Opportunity Tags
+    html.write("<div class='section'>")
+    html.write("<h2>📘 Opportunity Tag Legend</h2>")
+    html.write("<ul>")
+    html.write("<li>🔥 High Potential: low CTR but high search volume — great candidate to improve</li>")
+    html.write("<li>🧱 Low CTR, High Impressions: shown often but underperforming — revise or exclude</li>")
+    html.write("<li>💡 Niche Opportunity: not widely searched, but could convert in niche campaigns</li>")
+    html.write("<li>⭐ Branded Growth: brand-related or localized — good for brand expansion</li>")
+    html.write("<li>📉 Overused / Declining: poor performance across the board — consider removing</li>")
+    html.write("<li>🚧 Review Needed: underperforming with no clear reason — audit relevance</li>")
+    html.write("</ul>")
     html.write("</div>")
 
     # 📌 Recommendations section
@@ -479,61 +571,95 @@ def export_case_study_report(case_study_df, suggestions):
         html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
     html.write("</div>")
 
-    # Keyword Suggestion Table
+    # New section for Top 10 Best Performing Keywords
+    html.write("<div class='section'>")
+    html.write("<h2>📈 Top Performing Keywords (High CTR, High Volume)</h2>")
+    best_performing = case_study_df.sort_values(
+        by=['original_ctr', 'search_volume', 'impressions'],
+        ascending=[False, False, False]
+    ).head(10)
+    html.write("<table>")
+    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in best_performing.columns) + "<th>Opportunity Type</th></tr>")
+    html.write(render_table_rows(best_performing))
+    html.write("</table>")
+    html.write("</div>")
+
+    # New section for Top 10 Underperforming but Valuable Keywords
+    html.write("<div class='section'>")
+    html.write("<h2>🚧 High-Exposure Keywords to Improve (Low CTR, High Volume)</h2>")
+    underperforming = case_study_df.sort_values(
+        by=['original_ctr', 'search_volume', 'impressions'],
+        ascending=[True, False, False]
+    ).head(10)
+    html.write("<table>")
+    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in underperforming.columns) + "<th>Opportunity Type</th></tr>")
+    html.write(render_table_rows(underperforming))
+    html.write("</table>")
+    html.write("</div>")
+
+    # New section for Top 10 Worst Performing Keywords
+    html.write("<div class='section'>")
+    html.write("<h2>🧹 Low-Priority Keywords to Remove (Low CTR, Low Volume)</h2>")
+    worst_performing = case_study_df.sort_values(
+        by=['original_ctr', 'search_volume', 'impressions'],
+        ascending=[True, True, True]
+    ).head(10)
+    html.write("<table>")
+    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in worst_performing.columns) + "<th>Opportunity Type</th></tr>")
+    html.write(render_table_rows(worst_performing))
+    html.write("</table>")
+    html.write("</div>")
+
+    # Toggle button for full keyword table
+    html.write("<div class='keyword-toggle-container'>")
+    html.write("<button id='toggle-button' class='toggle-button' onclick='toggleTable()'>Show All Keywords</button>")
+    html.write("</div>")
+
+    # Full keyword table in hidden div
+    html.write("<div id='full-keyword-table' class='full-table'>")
+    html.write("<table>")
+    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in case_study_df.columns) + "<th>Opportunity Type</th></tr>")
+    html.write(render_table_rows(case_study_df))
+    html.write("</table>")
+    html.write("</div>")
+
+    # 📌 Keyword Suggestion Table Section
     html.write("<div class='section'>")
     html.write("<h2>📝 Keyword Suggestions and Projections</h2>")
-    # Build styled table manually for more control
     try:
-        # Identify top 3 keywords by CTR uplift for bolding
-        top3_set = set()
-        if 'ctr_uplift' in case_study_df.columns:
+        ctr_valid = False
+        if {'original_ctr', 'estimated_ctr', 'ctr_uplift'}.issubset(case_study_df.columns):
+            ctr_vals = case_study_df['original_ctr']
+            if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
+                ctr_valid = True
+        if ctr_valid:
+            # Top 3 keywords by CTR uplift
             top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
-            top3_set = set(top3['keyword'])
-        html.write("<table>")
-        # Table header
-        html.write("<tr>")
-        for col in case_study_df.columns:
-            html.write(f"<th>{col.replace('_', ' ').title()}</th>")
-        html.write("</tr>")
-        # Table rows
-        for _, row in case_study_df.iterrows():
-            keyword = row['keyword']
-            html.write("<tr>")
-            for col in case_study_df.columns:
-                val = row[col]
-                cell = val
-                # Bold top 3 keywords
-                if col == 'keyword' and keyword in top3_set:
-                    cell = f"<span class='bold-keyword'>{val}</span>"
-                # Color-code CTR uplift
-                elif col == 'ctr_uplift':
-                    try:
-                        cell_val = float(val)
-                        if cell_val > 0:
-                            cell = f"<span class='ctr-uplift-pos'>+{cell_val:.2f}%</span>"
-                        elif cell_val < 0:
-                            cell = f"<span class='ctr-uplift-neg'>{cell_val:.2f}%</span>"
-                        else:
-                            cell = f"{cell_val:.2f}%"
-                    except Exception:
-                        cell = val
-                # Format floats for CTR columns
-                elif col in ['original_ctr', 'estimated_ctr']:
-                    try:
-                        cell = f"{float(val):.2f}%"
-                    except Exception:
-                        cell = val
-                # Format ints with commas for impressions/search_volume
-                elif col in ['impressions', 'search_volume']:
-                    try:
-                        cell = f"{int(val):,}"
-                    except Exception:
-                        cell = val
-                html.write(f"<td>{cell}</td>")
-            html.write("</tr>")
-        html.write("</table>")
+            top3_keywords = top3['keyword'].tolist()
+            html.write("<ul>")
+            html.write(f"<li>Focus on improving campaigns using: <strong>{', '.join(top3_keywords)}</strong> — these show the strongest projected uplift.</li>")
+            # Top suggestions for each
+            if suggestions and 'keywords' in suggestions:
+                for kw in top3_keywords:
+                    alts = suggestions['keywords'].get(kw, [])
+                    if alts:
+                        html.write(f"<li>Test new ad copy using suggestions for <strong>{kw}</strong>: <em>{', '.join(alts)}</em></li>")
+            html.write("<li>Consider building ad groups or landing pages around these high-impact keywords.</li>")
+            html.write("</ul>")
+        else:
+            # CTR missing or simulated
+            html.write("<ul>")
+            html.write("<li><strong>Note:</strong> CTR data appears to be simulated or unavailable. For deeper performance insights, consider integrating live ad performance data.</li>")
+            # Use search_volume if available and numeric
+            if 'search_volume' in case_study_df.columns and np.issubdtype(case_study_df['search_volume'].dtype, np.number):
+                top5 = case_study_df.sort_values('search_volume', ascending=False).head(5)
+                top5_keywords = top5['keyword'].tolist()
+                if top5_keywords:
+                    html.write(f"<li>These keywords show the highest search volume and could be strong candidates to optimize: <strong>{', '.join(top5_keywords)}</strong>.</li>")
+            html.write("<li>Consider refining your targeting strategy around these topics.</li>")
+            html.write("</ul>")
     except Exception as e:
-        html.write("<p><em>Could not render table due to data issues.</em></p>")
+        html.write("<p><em>Recommendations unavailable due to data issues.</em></p>")
     html.write("</div>")
 
     # Footer
@@ -542,4 +668,54 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("</div>")
 
     html.write("</div></body></html>")
-    return html.getvalue() 
+    return html.getvalue()
+
+def render_table_rows(df):
+    rows_html = ""
+    top3_keywords = set(df.sort_values('ctr_uplift', ascending=False)['keyword'].head(3))
+    for _, row in df.iterrows():
+        rows_html += "<tr>"
+        for col in df.columns:
+            val = row[col]
+            cell = val
+            if col == 'keyword' and row['keyword'] in top3_keywords:
+                cell = f"<span class='bold-keyword'>{val}</span>"
+            elif col == 'ctr_uplift':
+                try:
+                    cell_val = float(val)
+                    if cell_val > 0:
+                        cell = f"<span class='ctr-uplift-pos'>+{cell_val:.2f}%</span>"
+                    elif cell_val < 0:
+                        cell = f"<span class='ctr-uplift-neg'>{cell_val:.2f}%</span>"
+                    else:
+                        cell = f"{cell_val:.2f}%"
+                except:
+                    pass
+            elif col in ['original_ctr', 'estimated_ctr']:
+                try:
+                    cell = f"{float(val):.2f}%"
+                except:
+                    pass
+            elif col in ['impressions', 'search_volume']:
+                try:
+                    cell = f"{int(val):,}"
+                except:
+                    pass
+            rows_html += f"<td>{cell}</td>"
+        # Add Opportunity Type column
+        opportunity_type = ""
+        if row['original_ctr'] < 1.0 and row['search_volume'] > 30000:
+            opportunity_type = "🔥 High Potential"
+        elif row['original_ctr'] < 0.5 and row['impressions'] > 1200:
+            opportunity_type = "🚧 Low CTR, High Impressions"
+        elif row['search_volume'] < 10000 and row['original_ctr'] < 1.0:
+            opportunity_type = "💡 Niche Opportunity"
+        elif any(term in row['keyword'].lower() for term in ["brand", "best", "near me"]):
+            opportunity_type = "⭐ Branded Growth"
+        elif row['original_ctr'] < 0.5 and row['ctr_uplift'] < 0.1:
+            opportunity_type = "📉 Overused / Declining"
+        else:
+            opportunity_type = "Neutral"
+        rows_html += f"<td><span class='tag-opportunity{' neutral' if opportunity_type == 'Neutral' else ''}'>{opportunity_type}</span></td>"
+        rows_html += "</tr>\n"
+    return rows_html 
