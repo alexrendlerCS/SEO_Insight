@@ -806,6 +806,7 @@ def render_table_rows(df, highlight_keywords=None):
                     pass
             rows_html += f"<td>{cell}</td>"
         # Add Opportunity Type column
+
         opportunity_type = ""
         if row['original_ctr'] < 1.0 and row['search_volume'] > 30000:
             opportunity_type = "🔥 High Potential"
