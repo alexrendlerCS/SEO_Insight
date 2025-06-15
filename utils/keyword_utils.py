@@ -108,24 +108,14 @@ class KeywordClusterer:
             logger.error(f"Error clustering keywords: {str(e)}")
             raise
     
-    def visualize_clusters(self, embeddings, labels, keywords, df=None):
+    def visualize_clusters(self, embeddings, labels, keywords, df):
         """
-        Create interactive visualization of keyword clusters.
-        Only shows hover tooltips, no visible labels.
-        Also returns a summary DataFrame per cluster (excluding -1).
-        
-        Args:
-            embeddings: 2D array of keyword embeddings
-            labels: Cluster labels for each keyword
-            keywords: List of keywords
-            df: Optional DataFrame with 'CTR' and 'search_volume' columns
-        Returns:
-            (fig, summary_df): Plotly figure and summary DataFrame
+        Visualize keyword clusters using UMAP and Plotly.
         """
+        import plotly.express as px
         import pandas as pd
-        import plotly.graph_objects as go
         import numpy as np
-        
+
         # Create DataFrame for plotting
         plot_df = pd.DataFrame({
             'x': embeddings[:, 0],
@@ -133,49 +123,36 @@ class KeywordClusterer:
             'cluster': labels,
             'keyword': keywords
         })
-        if df is not None:
-            if 'CTR' in df.columns:
-                plot_df['CTR'] = df['CTR'].values
-            if 'search_volume' in df.columns:
-                plot_df['search_volume'] = df['search_volume'].values
-        
+
+        # Add CTR if available
+        if 'CTR' in df.columns:
+            plot_df['CTR'] = df['CTR'].values
+        elif 'original_ctr' in df.columns:
+            plot_df['CTR'] = df['original_ctr'].values
+
         # Create scatter plot
-        fig = go.Figure()
-        for cluster in range(max(labels) + 1):
-            cluster_data = plot_df[plot_df['cluster'] == cluster].copy()
-            fig.add_trace(go.Scatter(
-                x=cluster_data['x'],
-                y=cluster_data['y'],
-                mode='markers',
-                name=f'Cluster {cluster}',
-                hovertext=cluster_data['keyword'],
-                hoverinfo='text',
-                marker=dict(size=10)
-            ))
-        fig.update_layout(
-            title='Keyword Clusters',
-            xaxis_title='Embedding X',
-            yaxis_title='Embedding Y',
-            legend_title='Cluster'
+        fig = px.scatter(
+            plot_df,
+            x='x',
+            y='y',
+            color='cluster',
+            hover_data=['keyword', 'CTR'],
+            title='Keyword Clusters Visualization'
         )
-        # Build summary DataFrame (exclude cluster -1)
-        summary_rows = []
-        for cluster in sorted(set(labels)):
-            if cluster == -1:
-                continue
-            cluster_df = plot_df[plot_df['cluster'] == cluster]
-            n_keywords = len(cluster_df)
-            avg_ctr = float(np.nanmean(cluster_df['CTR'])) * 100 if 'CTR' in cluster_df.columns else None
-            avg_ctr = round(avg_ctr, 2) if avg_ctr is not None else None
-            avg_sv = int(np.nanmean(cluster_df['search_volume'])) if 'search_volume' in cluster_df.columns else None
-            avg_sv_fmt = f"{avg_sv:,}" if avg_sv is not None else None
-            summary_rows.append({
-                'Cluster ID': cluster,
-                'Num Keywords': n_keywords,
-                'Avg CTR (%)': avg_ctr,
-                'Avg Search Volume': avg_sv_fmt
-            })
-        summary_df = pd.DataFrame(summary_rows)
+
+        # Update layout
+        fig.update_layout(
+            xaxis_title='UMAP Dimension 1',
+            yaxis_title='UMAP Dimension 2',
+            showlegend=True
+        )
+
+        # Create summary DataFrame
+        summary_df = plot_df.groupby('cluster').agg({
+            'keyword': 'count',
+            'CTR': 'mean'
+        }).rename(columns={'keyword': 'count'})
+
         return fig, summary_df
 
 
@@ -253,46 +230,54 @@ def cluster_low_performance_keywords(
 
 def prepare_case_study_data(clustered_df, suggestions, estimated_ctrs):
     """
-    Prepare a DataFrame for the case study report, including original and estimated CTRs, uplift, and a flag for auto-estimated values.
+    Prepare case study data with CTR uplift calculations and opportunity score.
     """
     import numpy as np
-    rows = []
-    for _, row in clustered_df.iterrows():
+
+    # Create a copy of the clustered data
+    case_study_df = clustered_df.copy()
+
+    # Ensure 'original_ctr' is correctly calculated from 'CTR'
+    if 'CTR' in case_study_df.columns:
+        case_study_df['original_ctr'] = case_study_df['CTR']
+    else:
+        case_study_df['original_ctr'] = np.nan
+
+    # Add estimated CTRs with smart fallback
+    def get_estimated_ctr(row):
         keyword = row['keyword']
-        original_ctr = row['CTR'] if 'CTR' in row else np.nan
-        # Compute smart-estimate
-        if original_ctr < 0.5:
-            smart_estimate = original_ctr + 0.3
-        elif original_ctr < 1.0:
-            smart_estimate = original_ctr + 0.2
-        elif original_ctr < 2.0:
-            smart_estimate = original_ctr + 0.1
+        original_ctr = row['original_ctr']
+        
+        # If keyword has a manual estimate, use it
+        if keyword in estimated_ctrs and estimated_ctrs[keyword] is not None:
+            return estimated_ctrs[keyword]
+        
+        # Otherwise, compute smart estimate
+        if pd.notna(original_ctr):
+            if original_ctr < 0.5:
+                smart_est = original_ctr + 0.3
+            elif original_ctr < 1.0:
+                smart_est = original_ctr + 0.2
+            elif original_ctr < 2.0:
+                smart_est = original_ctr + 0.1
+            elif original_ctr >= 3.0:
+                smart_est = original_ctr
+            else:
+                smart_est = original_ctr + 0.05  # fallback for 2.0 <= CTR < 3.0
+
+            return smart_est
         else:
-            smart_estimate = original_ctr
-        smart_estimate = min(smart_estimate, 3.0)
-        # Use user-provided estimated CTR if available
-        if keyword in estimated_ctrs:
-            estimated_ctr = estimated_ctrs[keyword]
-            auto_estimated = np.isclose(estimated_ctr, smart_estimate)
-        else:
-            estimated_ctr = smart_estimate
-            auto_estimated = True
-        ctr_uplift = estimated_ctr - original_ctr if not np.isnan(original_ctr) and not np.isnan(estimated_ctr) else np.nan
-        row_dict = {
-            'keyword': keyword,
-            'original_ctr': original_ctr,
-            'estimated_ctr': estimated_ctr,
-            'ctr_uplift': ctr_uplift,
-            'auto_estimated': auto_estimated
-        }
-        # Add impressions if present
-        if 'impressions' in row:
-            row_dict['impressions'] = row['impressions']
-        # Add search_volume if present
-        if 'search_volume' in row:
-            row_dict['search_volume'] = row['search_volume']
-        rows.append(row_dict)
-    return pd.DataFrame(rows)
+            return 0.5  # Default estimate
+
+    case_study_df['estimated_ctr'] = case_study_df.apply(get_estimated_ctr, axis=1)
+
+    # Calculate CTR uplift
+    case_study_df['ctr_uplift'] = case_study_df['estimated_ctr'] - case_study_df['original_ctr']
+
+    # Calculate opportunity score
+    case_study_df['opportunity_score'] = case_study_df['ctr_uplift'] * np.log1p(case_study_df['search_volume']) * np.log1p(case_study_df['impressions'])
+
+    return case_study_df
 
 def export_case_study_report(case_study_df, suggestions):
     """
@@ -315,21 +300,17 @@ def export_case_study_report(case_study_df, suggestions):
             margin: 0;
             padding: 0;
         }
+
         .container {
-            max-width: 900px;
-            margin: 30px auto 30px auto;
+            max-width: 100%;
+            margin: 30px auto;
             background: #fff;
             border-radius: 12px;
             box-shadow: 0 2px 12px rgba(0,0,0,0.07);
-            padding: 32px 36px 24px 36px;
+            padding: 32px 24px;
+            overflow-x: hidden;
         }
-        .section {
-            background: #f3f6fa;
-            border-radius: 8px;
-            margin-bottom: 32px;
-            padding: 24px 28px 18px 28px;
-            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
-        }
+
         h1 {
             font-size: 2.5em;
             margin-bottom: 0.2em;
@@ -338,68 +319,9 @@ def export_case_study_report(case_study_df, suggestions):
             padding: 18px 0 18px 18px;
             border-bottom: 3px solid #0072C6;
             border-radius: 12px 12px 0 0;
-        }
-        h2 {
-            font-size: 1.5em;
-            color: #34495e;
-            margin-top: 0;
-            margin-bottom: 0.7em;
-            border-left: 6px solid #0072C6;
-            padding-left: 12px;
-            background: #eaf3fa;
-            border-radius: 6px;
-        }
-        ul {
-            margin-top: 0.5em;
-            margin-bottom: 0.5em;
-        }
-        .summary-list li {
-            margin-bottom: 0.4em;
-        }
-        table {
-            width: 100%;
-            border-collapse: collapse;
-            margin: 18px 0 10px 0;
-            font-size: 1.05em;
-        }
-        th, td {
-            padding: 10px 12px;
-            border: 1px solid #e0e6ed;
-            text-align: left;
-        }
-        th {
-            background: #eaf3fa;
-            color: #0072C6;
-            font-weight: 600;
-        }
-        tr:nth-child(even) {
-            background: #f7fafd;
-        }
-        tr:nth-child(odd) {
-            background: #fff;
-        }
-        tr:hover {
-            background: #f1f7ff;
-        }
-        .ctr-uplift-pos {
-            color: #28a745;
-            font-weight: bold;
-        }
-        .ctr-uplift-neg {
-            color: #d9534f;
-            font-weight: bold;
-        }
-        .bold-keyword {
-            font-weight: bold;
-            background: #fffbe6;
-        }
-        .footer {
-            margin-top: 40px;
-            padding: 18px 0 0 0;
             text-align: center;
-            color: #888;
-            font-size: 1em;
         }
+
         .problem-statement {
             font-size: 1.05em;
             line-height: 1.6em;
@@ -408,7 +330,118 @@ def export_case_study_report(case_study_df, suggestions):
             border-radius: 8px;
             border-left: 5px solid #0072C6;
             margin-bottom: 20px;
+            max-width: 800px;
+            margin-left: auto;
+            margin-right: auto;
         }
+
+        /* Responsive grid for key insights sections */
+        .grid-section-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 24px;
+            margin-top: 20px;
+            margin-bottom: 40px;
+        }
+
+        .grid-section {
+            background-color: #f3f6fa;
+            border-radius: 8px;
+            padding: 24px 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+        }
+
+        .grid-section h2 {
+            font-size: 1.4em;
+            color: #0072C6;
+            margin-bottom: 12px;
+            border-left: 6px solid #0072C6;
+            padding-left: 12px;
+            background: #eaf3fa;
+            border-radius: 6px;
+        }
+
+        .section {
+            background: #f3f6fa;
+            border-radius: 8px;
+            margin: 0 auto 32px auto;
+            padding: 24px 20px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.03);
+            overflow-x: auto;
+            max-width: 95%;
+        }
+
+        .section table {
+            min-width: 900px;
+            margin: 0 auto;
+        }
+
+        ul {
+            margin-top: 0.5em;
+            margin-bottom: 0.5em;
+        }
+
+        .summary-list li {
+            margin-bottom: 0.4em;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 18px 0 10px 0;
+            font-size: 1.05em;
+            overflow-x: auto;
+            display: block;
+        }
+
+        th, td {
+            padding: 10px 12px;
+            border: 1px solid #e0e6ed;
+            text-align: left;
+            white-space: nowrap;
+        }
+
+        th {
+            background: #eaf3fa;
+            color: #0072C6;
+            font-weight: 600;
+        }
+
+        tr:nth-child(even) {
+            background: #f7fafd;
+        }
+
+        tr:nth-child(odd) {
+            background: #fff;
+        }
+
+        tr:hover {
+            background: #f1f7ff;
+        }
+
+        .ctr-uplift-pos {
+            color: #28a745;
+            font-weight: bold;
+        }
+
+        .ctr-uplift-neg {
+            color: #d9534f;
+            font-weight: bold;
+        }
+
+        .bold-keyword {
+            font-weight: bold;
+            background: #fffbe6;
+        }
+
+        .footer {
+            margin-top: 40px;
+            padding: 18px 0 0 0;
+            text-align: center;
+            color: #888;
+            font-size: 1em;
+        }
+
         .toggle-button {
             background-color: #0072C6;
             color: white;
@@ -418,12 +451,22 @@ def export_case_study_report(case_study_df, suggestions):
             cursor: pointer;
             margin-bottom: 10px;
         }
+
         .toggle-button:hover {
             background-color: #005fa3;
         }
+
+        .keyword-toggle-container {
+            display: flex;
+            justify-content: center;
+            margin-top: 30px;
+            margin-bottom: 10px;
+        }
+
         .full-table {
             display: none;
         }
+
         .tag-opportunity {
             background-color: #f0f4f8;
             border-radius: 16px;
@@ -433,31 +476,10 @@ def export_case_study_report(case_study_df, suggestions):
             font-weight: 500;
             color: #444;
         }
+
         .tag-opportunity.neutral {
             background-color: #e0e0e0;
             color: #666;
-        }
-        .keyword-toggle-container {
-            display: flex;
-            justify-content: center;
-            margin-top: 30px;
-            margin-bottom: 10px;
-        }
-        .toggle-button {
-            background-color: #0072C6;
-            color: white;
-            border: none;
-            padding: 12px 28px;
-            font-size: 1.1em;
-            border-radius: 6px;
-            cursor: pointer;
-            transition: background-color 0.2s;
-            width: 100%;
-            max-width: 300px;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
-        }
-        .toggle-button:hover {
-            background-color: #005fa3;
         }
     </style>
     <script>
@@ -486,8 +508,47 @@ def export_case_study_report(case_study_df, suggestions):
     </div>
     """)
 
+    # Start grid container
+    html.write("<div class='grid-section-container'>")
+
+    # Executive Summary block
+    html.write("<div class='grid-section'>")
+    try:
+        total_keywords = len(case_study_df)
+        valid_ctr_rows = case_study_df.dropna(subset=["original_ctr", "estimated_ctr"])
+        avg_original_ctr = valid_ctr_rows["original_ctr"].mean()
+        avg_estimated_ctr = valid_ctr_rows["estimated_ctr"].mean()
+        avg_uplift = valid_ctr_rows["ctr_uplift"].mean()
+        has_impressions = "impressions" in case_study_df.columns
+        total_impressions = valid_ctr_rows["impressions"].sum() if has_impressions else None
+        # Estimated Click Gain
+        if has_impressions:
+            click_gain = ((valid_ctr_rows["estimated_ctr"] - valid_ctr_rows["original_ctr"]) * valid_ctr_rows["impressions"] / 100).sum()
+        else:
+            click_gain = None
+
+        html.write("<h2>📌 Executive Summary</h2>")
+        html.write("<ul class='summary-list'>")
+        html.write(f"<li><strong>Total Keywords Analyzed:</strong> {total_keywords}</li>")
+        html.write(f"<li><strong>Keywords with CTR data:</strong> {len(valid_ctr_rows)}</li>")
+        html.write(f"<li><strong>Average Original CTR:</strong> <span style='color:#0072C6;'>{avg_original_ctr:.2f}%</span></li>")
+        html.write(f"<li><strong>Average Estimated CTR:</strong> <span style='color:#0072C6;'>{avg_estimated_ctr:.2f}%</span></li>")
+        delta_color = '#28a745' if avg_uplift > 0 else '#d9534f'
+        html.write(f"<li><strong>Average CTR Uplift:</strong> <span style='color:{delta_color};'>{avg_uplift:+.2f}%</span></li>")
+        if total_impressions is not None:
+            html.write(f"<li><strong>Total Impressions:</strong> {int(total_impressions):,}</li>")
+        if click_gain is not None:
+            html.write(f"<li><strong>Estimated Click Gain:</strong> <span style='color:#0072C6;'>{int(click_gain):,}</span></li>")
+        html.write("</ul>")
+    except Exception as e:
+        html.write("<p><em>Executive summary unavailable due to data issues.</em></p>")
+    html.write("</div>")
+
+    # Pre-calculate global top keywords by opportunity score
+    global_top_keywords = set(case_study_df.sort_values('opportunity_score', ascending=False)['keyword'].head(3))
+
     # 📌 Recommendations section
-    html.write("<div class='section'>")
+    html.write("<div class='grid-section'>")
     html.write("<h2>📌 Recommendations</h2>")
     try:
         ctr_valid = False
@@ -496,8 +557,8 @@ def export_case_study_report(case_study_df, suggestions):
             if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
                 ctr_valid = True
         if ctr_valid:
-            # Top 3 keywords by CTR uplift
-            top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
+            # Top 3 keywords by opportunity score
+            top3 = case_study_df.sort_values('opportunity_score', ascending=False).head(3)
             top3_keywords = top3['keyword'].tolist()
             html.write("<ul>")
             html.write(f"<li>Focus on improving campaigns using: <strong>{', '.join(top3_keywords)}</strong> — these show the strongest projected uplift.</li>")
@@ -526,7 +587,7 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("</div>")
 
     # 📌 Keyword Suggestion Table Section
-    html.write("<div class='section'>")
+    html.write("<div class='grid-section'>")
     html.write("<h2>📝 Keyword Suggestions and Projections</h2>")
     try:
         ctr_valid = False
@@ -535,8 +596,8 @@ def export_case_study_report(case_study_df, suggestions):
             if ctr_vals.notna().any() and ctr_vals.nunique() > 1:
                 ctr_valid = True
         if ctr_valid:
-            # Top 3 keywords by CTR uplift
-            top3 = case_study_df.sort_values('ctr_uplift', ascending=False).head(3)
+            # Top 3 keywords by opportunity score
+            top3 = case_study_df.sort_values('opportunity_score', ascending=False).head(3)
             top3_keywords = top3['keyword'].tolist()
             html.write("<ul>")
             html.write(f"<li>Focus on improving campaigns using: <strong>{', '.join(top3_keywords)}</strong> — these show the strongest projected uplift.</li>")
@@ -565,7 +626,7 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("</div>")
 
     # Legend for Opportunity Tags
-    html.write("<div class='section'>")
+    html.write("<div class='grid-section'>")
     html.write("<h2>📘 Opportunity Tag Legend</h2>")
     html.write("<ul>")
     html.write("<li>🔥 High Potential: low CTR but high search volume — great candidate to improve</li>")
@@ -577,42 +638,76 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("</ul>")
     html.write("</div>")
 
+    # Close grid container
+    html.write("</div>")  # Close grid-section-container
+
     # New section for Top 10 Best Performing Keywords
     html.write("<div class='section'>")
     html.write("<h2>📈 Top Performing Keywords (High CTR, High Volume)</h2>")
-    best_performing = case_study_df.sort_values(
-        by=['original_ctr', 'search_volume', 'impressions'],
-        ascending=[False, False, False]
-    ).head(10)
+
+    # Select and sort top-performing keywords (keep all columns this time)
+    best_performing = case_study_df[
+        case_study_df['original_ctr'] >= case_study_df['original_ctr'].quantile(0.75)
+    ].sort_values(['original_ctr', 'search_volume', 'impressions'], ascending=[False, False, False]).head(10)
+
+    # Render the table
     html.write("<table>")
     html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in best_performing.columns) + "<th>Opportunity Type</th></tr>")
-    html.write(render_table_rows(best_performing))
+    html.write(render_table_rows(best_performing, highlight_keywords=global_top_keywords))
     html.write("</table>")
     html.write("</div>")
 
-    # New section for Top 10 Underperforming but Valuable Keywords
+    # New section for High-Exposure Keywords to Improve
     html.write("<div class='section'>")
-    html.write("<h2>🚧 High-Exposure Keywords to Improve (Low CTR, High Volume)</h2>")
-    underperforming = case_study_df.sort_values(
-        by=['original_ctr', 'search_volume', 'impressions'],
-        ascending=[True, False, False]
-    ).head(10)
+    html.write("<h2>🚧 High Visibility, Low Engagement (High Impressions, Low Conversion Keywords)</h2>")
+
+    # Dynamically determine thresholds
+    low_ctr_thresh = case_study_df['original_ctr'].quantile(0.25)  # Bottom 25%
+    high_impressions_thresh = case_study_df['impressions'].quantile(0.75)  # Top 25%
+    median_search_volume = case_study_df['search_volume'].median()
+
+    # Filter based on dynamic criteria
+    high_exposure_improve = case_study_df[
+        (case_study_df['original_ctr'] <= low_ctr_thresh) &
+        (case_study_df['impressions'] >= high_impressions_thresh) &
+        (case_study_df['search_volume'] >= median_search_volume)
+    ].sort_values('opportunity_score', ascending=False).head(10)
+
+    # Fallback if not enough matches
+    if len(high_exposure_improve) < 5:
+        low_ctr_thresh = case_study_df['original_ctr'].quantile(0.35)
+        high_impressions_thresh = case_study_df['impressions'].quantile(0.65)
+        high_exposure_improve = case_study_df[
+            (case_study_df['original_ctr'] <= low_ctr_thresh) &
+            (case_study_df['impressions'] >= high_impressions_thresh) &
+            (case_study_df['search_volume'] >= median_search_volume)
+        ].sort_values('opportunity_score', ascending=False).head(10)
+
+    # Render the table
     html.write("<table>")
-    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in underperforming.columns) + "<th>Opportunity Type</th></tr>")
-    html.write(render_table_rows(underperforming))
+    html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in high_exposure_improve.columns) + "<th>Opportunity Type</th></tr>")
+    html.write(render_table_rows(high_exposure_improve, highlight_keywords=global_top_keywords))
     html.write("</table>")
     html.write("</div>")
+
 
     # New section for Top 10 Worst Performing Keywords
     html.write("<div class='section'>")
-    html.write("<h2>🧹 Low-Priority Keywords to Remove (Low CTR, Low Volume)</h2>")
-    worst_performing = case_study_df.sort_values(
-        by=['original_ctr', 'search_volume', 'impressions'],
-        ascending=[True, True, True]
-    ).head(10)
+    html.write("<h2>🚫 Underperforming & Low Reach (Candidates for Removal)</h2>")
+    # Avoid division by zero and normalize scale by using rank percentiles
+    case_study_df['low_perf_score'] = (
+        case_study_df['search_volume'].rank(pct=True, ascending=True) +
+        case_study_df['impressions'].rank(pct=True, ascending=True) +
+        case_study_df['clicks'].rank(pct=True, ascending=True) +
+        case_study_df['original_ctr'].rank(pct=True, ascending=True)
+    ) / 4  # average of ranks
+
+    # Select 10 keywords with the lowest "low performance score"
+    worst_performing = case_study_df.sort_values('low_perf_score', ascending=True).head(10)
+
     html.write("<table>")
     html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in worst_performing.columns) + "<th>Opportunity Type</th></tr>")
-    html.write(render_table_rows(worst_performing))
+    html.write(render_table_rows(worst_performing, highlight_keywords=global_top_keywords))
     html.write("</table>")
     html.write("</div>")
 
@@ -625,9 +720,37 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("<div id='full-keyword-table' class='full-table'>")
     html.write("<table>")
     html.write("<tr>" + "".join(f"<th>{col.replace('_', ' ').title()}</th>" for col in case_study_df.columns) + "<th>Opportunity Type</th></tr>")
-    html.write(render_table_rows(case_study_df))
+    html.write(render_table_rows(case_study_df, highlight_keywords=global_top_keywords))
     html.write("</table>")
     html.write("</div>")
+
+    # Add CSS for button styling
+    html.write("""
+    <style>
+    .keyword-toggle-container {
+        display: flex;
+        justify-content: center;
+        margin-top: 30px;
+        margin-bottom: 10px;
+    }
+    .toggle-button {
+        background-color: #0072C6;
+        color: white;
+        border: none;
+        padding: 12px 28px;
+        font-size: 1.1em;
+        border-radius: 6px;
+        cursor: pointer;
+        transition: background-color 0.2s;
+        width: 100%;
+        max-width: 300px;
+        box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+    }
+    .toggle-button:hover {
+        background-color: #005fa3;
+    }
+    </style>
+    """)
 
     # Footer
     html.write("<div class='footer'>")
@@ -637,19 +760,20 @@ def export_case_study_report(case_study_df, suggestions):
     html.write("</div></body></html>")
     return html.getvalue()
 
-def render_table_rows(df):
+def render_table_rows(df, highlight_keywords=None):
     rows_html = ""
-    top3_keywords = set(df.sort_values('ctr_uplift', ascending=False)['keyword'].head(3))
     for _, row in df.iterrows():
         rows_html += "<tr>"
         for col in df.columns:
             val = row[col]
             cell = val
-            if col == 'keyword' and row['keyword'] in top3_keywords:
+            if col == 'keyword' and highlight_keywords and row['keyword'] in highlight_keywords:
                 cell = f"<span class='bold-keyword'>{val}</span>"
             elif col == 'ctr_uplift':
                 try:
                     cell_val = float(val)
+                    if np.isnan(cell_val):
+                        raise ValueError
                     if cell_val > 0:
                         cell = f"<span class='ctr-uplift-pos'>+{cell_val:.2f}%</span>"
                     elif cell_val < 0:
@@ -657,12 +781,24 @@ def render_table_rows(df):
                     else:
                         cell = f"{cell_val:.2f}%"
                 except:
-                    pass
-            elif col in ['original_ctr', 'estimated_ctr']:
+                    cell = '<span title="CTR uplift not available">N/A</span>'
+            elif col == 'original_ctr':
                 try:
                     cell = f"{float(val):.2f}%"
                 except:
-                    pass
+                    cell = '<span title="Original CTR not available">N/A</span>'
+
+            elif col == 'estimated_ctr':
+                try:
+                    cell = f"{float(val):.2f}%"
+                except:
+                    cell = '<span title="No estimated CTR for this keyword">N/A</span>'
+
+            elif col == 'opportunity_score':
+                try:
+                    cell = f"{float(val):.2f}"
+                except:
+                    cell = '<span title="Opportunity score not available">N/A</span>'
             elif col in ['impressions', 'search_volume']:
                 try:
                     cell = f"{int(val):,}"

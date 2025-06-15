@@ -670,20 +670,20 @@ def prepare_case_study():
                     id_vars=['keyword'],
                     value_vars=['original_ctr', 'estimated_ctr'],
                     var_name='CTR Type',
-                    value_name='CTR'
+                    value_name='ctr_melted'
                 )
                 
                 # Create bar chart
                 fig = px.bar(
                     plot_df,
                     x='keyword',
-                    y='CTR',
+                    y='ctr_melted',
                     color='CTR Type',
                     barmode='group',
                     title='Original vs Estimated CTR Comparison',
                     labels={
                         'keyword': 'Keywords',
-                        'CTR': 'CTR (%)',
+                        'ctr_melted': 'CTR (%)',
                         'CTR Type': 'CTR Type'
                     }
                 )
